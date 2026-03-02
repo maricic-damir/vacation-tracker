@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Database (stored in OneDrive per README)
+*.db
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# Local config (if any)
+config.ini
