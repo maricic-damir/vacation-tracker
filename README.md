@@ -4,7 +4,7 @@ Desktop app for tracking employee vacation days (Windows). Uses **PyQt6** and **
 
 ## Features
 
-- **Screen 1 – Employee list**: JMBG, name, contract type (fixed term / open-ended), active/archived, total vacation days left. Double-click a row to open employee details. Buttons: Add employee, Schedule vacation/day off, All scheduled/used days.
+- **Screen 1 – Employee list**: JMBG, name, contract type (fixed term / open-ended), total vacation days left. Double-click a row to open employee details. Buttons: Add employee, Schedule vacation/day off, All scheduled/used days.
 - **Screen 2 – Employee details**: Properties, year balance (days at start, transferred from previous year, earned, used, left), tables of used days off and earned days. Buttons: Contract date/type, Set transferred days, Schedule vacation/day off, Add earned days.
 - **Screen 3 – All schedules**: Table of all vacation/day-off records (JMBG, name, booking date, start/end). Back to list.
 

@@ -1,6 +1,5 @@
 """Screen 1: Employee list table + add employee + schedule vacation + link to Screen 3."""
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QHeaderView,
     QMessageBox,
@@ -24,9 +23,9 @@ class EmployeeListScreen(QWidget):
         self._refresh = refresh_callback
         lay = QVBoxLayout(self)
         self._table = QTableWidget()
-        self._table.setColumnCount(6)
+        self._table.setColumnCount(5)
         self._table.setHorizontalHeaderLabels(
-            ["JMBG", "First name", "Last name", "Contract type", "Active", "Vacation days left"]
+            ["JMBG", "First name", "Last name", "Contract type", "Vacation days left"]
         )
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -76,27 +75,8 @@ class EmployeeListScreen(QWidget):
             if r.get("contract_end_date"):
                 ct += f" (until {r['contract_end_date']})"
             self._table.setItem(i, 3, self._cell(ct))
-            # Archive toggle (column 4)
-            chk = QCheckBox()
-            chk.setChecked(bool(r.get("is_active")))
-            eid = r.get("id")
-            chk.stateChanged.connect(lambda state, emp_id=eid: self._on_active_toggled(emp_id, state))
-            self._table.setCellWidget(i, 4, chk)
-            self._table.setItem(i, 5, self._cell(str(r.get("total_vacation_left", 0))))
+            self._table.setItem(i, 4, self._cell(str(r.get("total_vacation_left", 0))))
         self._table.resizeRowsToContents()
-
-    def _on_active_toggled(self, employee_id: int, state: int):
-        conn = self._conn()
-        if not conn:
-            return
-        is_checked = state == Qt.CheckState.Checked.value
-        from db_helpers import set_employee_active
-        try:
-            set_employee_active(conn, int(employee_id), is_checked)
-        except Exception as e:
-            QMessageBox.critical(self, "Archive", str(e))
-            return
-        self._refresh()
 
     def _cell(self, text: str, user_data=None):
         it = QTableWidgetItem(str(text))
