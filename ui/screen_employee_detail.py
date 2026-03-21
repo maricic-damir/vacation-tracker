@@ -35,13 +35,18 @@ class EmployeeDetailScreen(QWidget):
         self._employee_id = None
         lay = QVBoxLayout(self)
 
-        # Back
+        # Header: employee name + back
+        header = QHBoxLayout()
+        self._employee_title = QLabel("")
+        self._employee_title.setWordWrap(False)
+        header.addWidget(self._employee_title, 1)
         btn_back = QPushButton("← Back to list")
         btn_back.clicked.connect(lambda: on_back() if on_back else None)
-        lay.addWidget(btn_back)
+        header.addWidget(btn_back, 0)
+        lay.addLayout(header)
 
         # Properties (list)
-        self._props_group = QGroupBox("Employee")
+        self._props_group = QGroupBox("Details")
         self._props_layout = QFormLayout(self._props_group)
         lay.addWidget(self._props_group)
 
@@ -100,6 +105,9 @@ class EmployeeDetailScreen(QWidget):
         emp = get_employee(conn, self._employee_id)
         if not emp:
             return
+        full_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+        self._employee_title.setText(full_name)
+
         year = date.today().year
         ensure_year_balance(conn, self._employee_id, year, emp["contract_type"])
         balance = get_year_balance(conn, self._employee_id, year)
