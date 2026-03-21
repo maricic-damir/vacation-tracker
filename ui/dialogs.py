@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QDate
 from typing import Optional
 
+from entitlement import prorated_vacation_entitlement_for_year
+
 
 def choose_or_create_db_path(parent: Optional[QWidget]) -> Optional[str]:
     """Let user choose where to create or select the database file (first run)."""
@@ -84,12 +86,11 @@ class AddEmployeeDialog(QDialog):
         self.contract_end_date = QDateEdit()
         self.contract_end_date.setCalendarPopup(True)
         self.contract_end_date.setDate(QDate.currentDate().addYears(1))
+        self.contract_end_date.dateChanged.connect(lambda _d: self._update_prorated_label())
         lay.addRow("Contract end date:", self.contract_end_date)
-        self.days_at_start = QSpinBox()
-        self.days_at_start.setMinimum(0)
-        self.days_at_start.setMaximum(365)
-        self.days_at_start.setValue(0)
-        lay.addRow("Days at start (this year):", self.days_at_start)
+        self._prorated_label = QLabel()
+        self._prorated_label.setWordWrap(True)
+        lay.addRow("Vacation days (this year, prorated):", self._prorated_label)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._on_accept)
         bb.rejected.connect(self.reject)
@@ -99,7 +100,18 @@ class AddEmployeeDialog(QDialog):
     def _on_contract_type_changed(self, idx: int):
         is_fixed = idx == 0
         self.contract_end_date.setEnabled(is_fixed)
-        self.days_at_start.setEnabled(is_fixed)
+        self._update_prorated_label()
+
+    def _update_prorated_label(self):
+        idx = self.contract_type.currentIndex()
+        end_str = (
+            self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None
+        )
+        n = prorated_vacation_entitlement_for_year(date.today(), end_str)
+        self._prorated_label.setText(
+            str(n)
+            + " (based on today's date, contract type, and end of employment within this year)"
+        )
 
     def _validate_jmbg(self) -> Optional[str]:
         """Return None if valid, else error message."""
@@ -122,13 +134,14 @@ class AddEmployeeDialog(QDialog):
         idx = self.contract_type.currentIndex()
         contract_type = "fixed_term" if idx == 0 else "open_ended"
         end_date = self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None
+        days_at_start = prorated_vacation_entitlement_for_year(date.today(), end_date)
         return {
             "jmbg": self.jmbg.text().strip(),
             "first_name": self.first_name.text().strip(),
             "last_name": self.last_name.text().strip(),
             "contract_type": contract_type,
             "contract_end_date": end_date,
-            "days_at_start": self.days_at_start.value() if idx == 0 else 0,
+            "days_at_start": days_at_start,
         }
 
 

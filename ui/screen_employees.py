@@ -143,8 +143,7 @@ class EmployeeListScreen(QWidget):
                 data["contract_type"], data["contract_end_date"],
             )
             ensure_year_balance(conn, eid, year, data["contract_type"])
-            if data["contract_type"] == "fixed_term" and data.get("days_at_start", 0) > 0:
-                set_days_at_start(conn, eid, year, data["days_at_start"])
+            set_days_at_start(conn, eid, year, data["days_at_start"])
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
             return
