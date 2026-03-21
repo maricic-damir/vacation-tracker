@@ -51,6 +51,9 @@ class EmployeeListScreen(QWidget):
         btn_all_schedules = QPushButton("All scheduled / used days")
         btn_all_schedules.clicked.connect(self._go_to_all_schedules)
         btn_lay.addWidget(btn_all_schedules)
+        self._btn_rollover = QPushButton("Roll over to [Year]")
+        self._btn_rollover.clicked.connect(self._rollover_year)
+        btn_lay.addWidget(self._btn_rollover)
         btn_lay.addStretch()
         lay.addLayout(btn_lay)
         self._go_to_all_schedules_callback = None
@@ -91,7 +94,9 @@ class EmployeeListScreen(QWidget):
         conn = self._conn()
         if not conn:
             return
+        from datetime import date
         from db_helpers import list_employees
+        from database import is_rollover_complete
 
         prev_eid = None
         for idx in self._table.selectionModel().selectedRows():
@@ -118,6 +123,11 @@ class EmployeeListScreen(QWidget):
                     break
         self._table.resizeRowsToContents()
         self._update_selection_hint()
+        
+        current_year = date.today().year
+        rollover_done = is_rollover_complete(conn, current_year)
+        self._btn_rollover.setText(f"Roll over to {current_year}")
+        self._btn_rollover.setEnabled(not rollover_done)
 
     def _cell(self, text: str, user_data=None):
         it = QTableWidgetItem(str(text))
@@ -205,3 +215,42 @@ class EmployeeListScreen(QWidget):
             QMessageBox.critical(self, "Error", str(e))
             return
         self._refresh()
+
+    def _rollover_year(self):
+        from datetime import date
+        from database import rollover_all_employees
+        
+        conn = self._conn()
+        if not conn:
+            return
+        
+        current_year = date.today().year
+        previous_year = current_year - 1
+        
+        reply = QMessageBox.question(
+            self,
+            "Confirm Year Rollover",
+            f"Roll over all active employees from {previous_year} to {current_year}?\n\n"
+            f"This will:\n"
+            f"- Transfer all unused days from {previous_year} to {current_year}\n"
+            f"- Calculate new days at start for {current_year} based on contract end dates\n"
+            f"- Process all active employees\n\n"
+            f"This action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        try:
+            count = rollover_all_employees(conn, previous_year, current_year)
+            QMessageBox.information(
+                self,
+                "Rollover Complete",
+                f"Successfully rolled over {count} employee(s) to {current_year}."
+            )
+            self._refresh()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+            return

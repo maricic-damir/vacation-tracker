@@ -127,3 +127,71 @@ def run_completion_job(conn: sqlite3.Connection) -> None:
         (today,),
     )
     conn.commit()
+
+
+def rollover_year_for_employee(conn: sqlite3.Connection, employee_id: int, from_year: int, to_year: int) -> bool:
+    """
+    Rollover an employee's balance from one year to the next.
+    Returns True if rollover was performed, False if skipped (already exists or no balance).
+    """
+    from entitlement import prorated_vacation_entitlement_for_year
+    from db_helpers import get_year_balance, get_employee
+    
+    cur = conn.execute(
+        "SELECT 1 FROM employee_year_balance WHERE employee_id = ? AND year = ?",
+        (employee_id, to_year),
+    )
+    if cur.fetchone():
+        return False
+    
+    employee = get_employee(conn, employee_id)
+    if not employee:
+        return False
+    
+    balance = get_year_balance(conn, employee_id, from_year)
+    
+    unused_days = max(0, balance["days_at_start"] + balance["days_transferred"] + balance["days_earned"] - balance["days_used"])
+    
+    days_at_start = prorated_vacation_entitlement_for_year(
+        date(to_year, 1, 1),
+        employee["contract_end_date"] if employee["contract_end_date"] else None
+    )
+    
+    conn.execute(
+        "INSERT INTO employee_year_balance (employee_id, year, days_at_start, days_transferred) VALUES (?, ?, ?, ?)",
+        (employee_id, to_year, days_at_start, unused_days),
+    )
+    conn.commit()
+    return True
+
+
+def rollover_all_employees(conn: sqlite3.Connection, from_year: int, to_year: int) -> int:
+    """
+    Rollover all active employees from one year to the next.
+    Returns count of employees processed.
+    """
+    cur = conn.execute("SELECT id FROM employees WHERE is_active = 1")
+    employee_ids = [row[0] for row in cur.fetchall()]
+    
+    processed_count = 0
+    for emp_id in employee_ids:
+        if rollover_year_for_employee(conn, emp_id, from_year, to_year):
+            processed_count += 1
+    
+    return processed_count
+
+
+def is_rollover_complete(conn: sqlite3.Connection, year: int) -> bool:
+    """
+    Check if all active employees have a year balance record for the given year.
+    Returns True if rollover is complete, False otherwise.
+    """
+    cur = conn.execute("""
+        SELECT COUNT(*) FROM employees 
+        WHERE is_active = 1 
+        AND id NOT IN (
+            SELECT employee_id FROM employee_year_balance WHERE year = ?
+        )
+    """, (year,))
+    missing_count = cur.fetchone()[0]
+    return missing_count == 0
