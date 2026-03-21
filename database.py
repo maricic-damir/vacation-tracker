@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS employees (
     last_name TEXT NOT NULL,
     contract_type TEXT NOT NULL CHECK (contract_type IN ('fixed_term', 'open_ended')),
     contract_end_date DATE NULL,
+    religion TEXT NOT NULL DEFAULT 'orthodox' CHECK (religion IN ('orthodox', 'catholic')),
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -61,16 +62,32 @@ CREATE TABLE IF NOT EXISTS vacation_records (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Non-working days (public holidays)
+CREATE TABLE IF NOT EXISTS non_working_days (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date DATE NOT NULL UNIQUE,
+    name_sr TEXT NOT NULL,
+    name_en TEXT,
+    holiday_type TEXT NOT NULL CHECK (holiday_type IN ('state', 'orthodox', 'catholic', 'other_religious')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS ix_vacation_employee ON vacation_records(employee_id);
 CREATE INDEX IF NOT EXISTS ix_vacation_dates ON vacation_records(start_date, end_date);
 CREATE INDEX IF NOT EXISTS ix_earned_employee ON earned_days(employee_id);
 CREATE INDEX IF NOT EXISTS ix_earned_date ON earned_days(earned_date);
+CREATE INDEX IF NOT EXISTS ix_non_working_date ON non_working_days(date);
+CREATE INDEX IF NOT EXISTS ix_non_working_active ON non_working_days(is_active);
 """
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     migrate_add_deduction_tracking(conn)
+    migrate_add_non_working_days(conn)
+    migrate_add_religion(conn)
     conn.commit()
 
 
@@ -138,7 +155,7 @@ def recalculate_existing_vacation_deductions(conn: sqlite3.Connection) -> None:
                 start_date = record[1]
                 end_date = record[2]
                 
-                days_needed = count_days_in_range(start_date, end_date)
+                days_needed = count_working_days_in_range(conn, start_date, end_date, employee_id)
                 
                 breakdown = calculate_deduction_breakdown(
                     days_needed,
@@ -213,7 +230,7 @@ def ensure_year_balance(conn: sqlite3.Connection, employee_id: int, year: int, c
 
 def run_completion_job(conn: sqlite3.Connection) -> None:
     """Mark vacation_records as completed where end_date < today and calculate deduction breakdown."""
-    from db_helpers import get_available_days_for_deduction, calculate_deduction_breakdown, count_days_in_range
+    from db_helpers import get_available_days_for_deduction, calculate_deduction_breakdown, count_working_days_in_range
     
     today = date.today().isoformat()
     
@@ -232,7 +249,7 @@ def run_completion_job(conn: sqlite3.Connection) -> None:
         end_date = record[3]
         
         year = date.fromisoformat(start_date).year
-        days_needed = count_days_in_range(start_date, end_date)
+        days_needed = count_working_days_in_range(conn, start_date, end_date, employee_id)
         
         available = get_available_days_for_deduction(conn, employee_id, year)
         breakdown = calculate_deduction_breakdown(
@@ -321,3 +338,227 @@ def is_rollover_complete(conn: sqlite3.Connection, year: int) -> bool:
     """, (year,))
     missing_count = cur.fetchone()[0]
     return missing_count == 0
+
+
+def migrate_add_non_working_days(conn: sqlite3.Connection) -> None:
+    """Add non_working_days table if it doesn't exist."""
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='non_working_days'")
+    if cur.fetchone():
+        return
+    # Table will be created by SCHEMA, so just run recalculation
+    recalculate_all_vacation_records_with_working_days(conn)
+
+
+def migrate_add_religion(conn: sqlite3.Connection) -> None:
+    """Add religion column to employees table if it doesn't exist."""
+    cur = conn.execute("PRAGMA table_info(employees)")
+    columns = {row[1] for row in cur.fetchall()}
+    
+    if "religion" not in columns:
+        # Add religion column with default 'orthodox' for existing employees
+        conn.execute("ALTER TABLE employees ADD COLUMN religion TEXT NOT NULL DEFAULT 'orthodox' CHECK (religion IN ('orthodox', 'catholic'))")
+        conn.commit()
+        # Recalculate all vacation records with new religion-based filtering
+        recalculate_all_vacation_records_with_working_days(conn)
+
+
+def recalculate_all_vacation_records_with_working_days(conn: sqlite3.Connection) -> None:
+    """
+    Recalculate all completed vacation records using working days logic.
+    This is run during migration to update existing data.
+    """
+    from db_helpers import count_working_days_in_range, calculate_deduction_breakdown
+    
+    cur = conn.execute("SELECT DISTINCT employee_id FROM vacation_records WHERE is_completed = 1 ORDER BY employee_id")
+    employee_ids = [row[0] for row in cur.fetchall()]
+    
+    for employee_id in employee_ids:
+        cur = conn.execute("""
+            SELECT DISTINCT strftime('%Y', start_date) as year 
+            FROM vacation_records 
+            WHERE employee_id = ? AND is_completed = 1
+            ORDER BY year
+        """, (employee_id,))
+        years = [int(row[0]) for row in cur.fetchall()]
+        
+        for year in years:
+            cur = conn.execute(
+                "SELECT days_at_start, days_transferred FROM employee_year_balance WHERE employee_id = ? AND year = ?",
+                (employee_id, year),
+            )
+            row = cur.fetchone()
+            at_start_available = row[0] if row else 0
+            transferred_available = row[1] if row else 0
+            
+            cur = conn.execute(
+                "SELECT COALESCE(SUM(number_of_days), 0) FROM earned_days WHERE employee_id = ? AND strftime('%Y', earned_date) = ?",
+                (employee_id, str(year)),
+            )
+            earned_available = cur.fetchone()[0]
+            
+            year_start = f"{year}-01-01"
+            year_end = f"{year}-12-31"
+            cur = conn.execute("""
+                SELECT id, start_date, end_date 
+                FROM vacation_records 
+                WHERE employee_id = ? AND is_completed = 1
+                AND (strftime('%Y', start_date) = ? OR strftime('%Y', end_date) = ? OR (start_date <= ? AND end_date >= ?))
+                ORDER BY start_date, id
+            """, (employee_id, str(year), str(year), year_start, year_end))
+            
+            records = cur.fetchall()
+            
+            for record in records:
+                record_id = record[0]
+                start_date = record[1]
+                end_date = record[2]
+                
+                days_needed = count_working_days_in_range(conn, start_date, end_date, employee_id)
+                
+                breakdown = calculate_deduction_breakdown(
+                    days_needed,
+                    transferred_available,
+                    at_start_available,
+                    earned_available
+                )
+                
+                conn.execute("""
+                    UPDATE vacation_records 
+                    SET days_from_transferred = ?,
+                        days_from_at_start = ?,
+                        days_from_earned = ?
+                    WHERE id = ?
+                """, (breakdown['transferred'], breakdown['at_start'], breakdown['earned'], record_id))
+                
+                transferred_available -= breakdown['transferred']
+                at_start_available -= breakdown['at_start']
+                earned_available -= breakdown['earned']
+    
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Non-working days CRUD
+# ---------------------------------------------------------------------------
+
+def get_non_working_days(conn: sqlite3.Connection, year: Optional[int] = None) -> list[dict]:
+    """
+    Get non-working days for a specific year or all years.
+    Returns list of dicts with keys: id, date, name_sr, name_en, holiday_type, is_active
+    """
+    if year:
+        cur = conn.execute("""
+            SELECT id, date, name_sr, name_en, holiday_type, is_active, created_at, updated_at
+            FROM non_working_days
+            WHERE strftime('%Y', date) = ? AND is_active = 1
+            ORDER BY date
+        """, (str(year),))
+    else:
+        cur = conn.execute("""
+            SELECT id, date, name_sr, name_en, holiday_type, is_active, created_at, updated_at
+            FROM non_working_days
+            WHERE is_active = 1
+            ORDER BY date
+        """)
+    return [dict(row) for row in cur.fetchall()]
+
+
+def is_non_working_day(conn: sqlite3.Connection, check_date: str) -> bool:
+    """Check if a date is a non-working day (holiday)."""
+    cur = conn.execute(
+        "SELECT 1 FROM non_working_days WHERE date = ? AND is_active = 1",
+        (check_date,)
+    )
+    return cur.fetchone() is not None
+
+
+def is_non_working_day_for_employee(conn: sqlite3.Connection, check_date: str, employee_id: int) -> bool:
+    """
+    Check if a date is a non-working day for a specific employee.
+    State holidays apply to everyone.
+    Religious holidays (orthodox/catholic) only apply to employees of that religion.
+    """
+    # Get employee's religion
+    cur = conn.execute("SELECT religion FROM employees WHERE id = ?", (employee_id,))
+    row = cur.fetchone()
+    if not row:
+        return False
+    
+    employee_religion = row[0]
+    
+    # Check if date is a holiday
+    cur = conn.execute(
+        "SELECT holiday_type FROM non_working_days WHERE date = ? AND is_active = 1",
+        (check_date,)
+    )
+    row = cur.fetchone()
+    
+    if not row:
+        return False
+    
+    holiday_type = row[0]
+    
+    # State holidays apply to everyone
+    if holiday_type == 'state':
+        return True
+    
+    # Religious holidays only apply if they match employee's religion
+    if holiday_type == 'orthodox' and employee_religion == 'orthodox':
+        return True
+    
+    if holiday_type == 'catholic' and employee_religion == 'catholic':
+        return True
+    
+    # 'other_religious' holidays don't apply to orthodox or catholic employees
+    return False
+
+
+def save_non_working_days(conn: sqlite3.Connection, holidays: list[dict]) -> int:
+    """
+    Bulk insert/update holidays.
+    Each dict should have: date, name_sr, name_en, holiday_type
+    Returns count of holidays saved.
+    """
+    count = 0
+    for holiday in holidays:
+        cur = conn.execute(
+            "SELECT id FROM non_working_days WHERE date = ?",
+            (holiday['date'],)
+        )
+        existing = cur.fetchone()
+        
+        if existing:
+            conn.execute("""
+                UPDATE non_working_days 
+                SET name_sr = ?, name_en = ?, holiday_type = ?, is_active = 1, updated_at = datetime('now')
+                WHERE date = ?
+            """, (holiday['name_sr'], holiday.get('name_en', ''), holiday['holiday_type'], holiday['date']))
+        else:
+            conn.execute("""
+                INSERT INTO non_working_days (date, name_sr, name_en, holiday_type, is_active)
+                VALUES (?, ?, ?, ?, 1)
+            """, (holiday['date'], holiday['name_sr'], holiday.get('name_en', ''), holiday['holiday_type']))
+        count += 1
+    
+    conn.commit()
+    return count
+
+
+def delete_non_working_day(conn: sqlite3.Connection, holiday_id: int) -> None:
+    """Delete a holiday by ID."""
+    conn.execute("DELETE FROM non_working_days WHERE id = ?", (holiday_id,))
+    conn.commit()
+
+
+def clear_non_working_days(conn: sqlite3.Connection, year: int) -> int:
+    """
+    Clear all holidays for a specific year.
+    Returns count of holidays deleted.
+    """
+    cur = conn.execute("""
+        DELETE FROM non_working_days 
+        WHERE strftime('%Y', date) = ?
+    """, (str(year),))
+    count = cur.rowcount
+    conn.commit()
+    return count

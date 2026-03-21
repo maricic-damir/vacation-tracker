@@ -54,6 +54,9 @@ class EmployeeListScreen(QWidget):
         self._btn_rollover = QPushButton("Roll over to [Year]")
         self._btn_rollover.clicked.connect(self._rollover_year)
         btn_lay.addWidget(self._btn_rollover)
+        self._btn_holidays = QPushButton("Manage Non-Working Days")
+        self._btn_holidays.clicked.connect(self._manage_holidays)
+        btn_lay.addWidget(self._btn_holidays)
         btn_lay.addStretch()
         lay.addLayout(btn_lay)
         self._go_to_all_schedules_callback = None
@@ -150,7 +153,7 @@ class EmployeeListScreen(QWidget):
             year = date.today().year
             eid = insert_employee(
                 conn, data["jmbg"], data["first_name"], data["last_name"],
-                data["contract_type"], data["contract_end_date"],
+                data["contract_type"], data["contract_end_date"], data["religion"],
             )
             ensure_year_balance(conn, eid, year, data["contract_type"])
             set_days_at_start(conn, eid, year, data["days_at_start"])
@@ -190,7 +193,7 @@ class EmployeeListScreen(QWidget):
     def _save_vacation(self, employee_id: int, data: dict):
         from datetime import date
         from ui.dialogs import warn_past_start_date
-        from db_helpers import (add_vacation_record, count_days_in_range, 
+        from db_helpers import (add_vacation_record, count_working_days_in_range, 
                                  get_available_days_for_deduction, calculate_deduction_breakdown)
         from database import ensure_year_balance, run_completion_job
         conn = self._conn()
@@ -212,7 +215,7 @@ class EmployeeListScreen(QWidget):
         
         if is_completed:
             year = start.year
-            days_needed = count_days_in_range(data["start_date"], data["end_date"])
+            days_needed = count_working_days_in_range(conn, data["start_date"], data["end_date"])
             available = get_available_days_for_deduction(conn, employee_id, year)
             breakdown = calculate_deduction_breakdown(
                 days_needed,
@@ -277,3 +280,15 @@ class EmployeeListScreen(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
             return
+    
+    def _manage_holidays(self):
+        """Open the manage non-working days dialog."""
+        from ui.dialogs import ManageNonWorkingDaysDialog
+        
+        conn = self._conn()
+        if not conn:
+            return
+        
+        dialog = ManageNonWorkingDaysDialog(self, conn)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._refresh()

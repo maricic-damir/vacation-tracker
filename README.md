@@ -59,3 +59,29 @@ The EXE will be in `dist/VacationTracker.exe`. Run it on the target Windows mach
   - **Windows:** `%APPDATA%\VacationTracker\config.ini`
   - **Other:** `~/.VacationTracker/config.ini`
 - Put the SQLite file in a **OneDrive** (or shared) folder so both users open the same file. Use the app one at a time to avoid conflicts.
+
+## New: Working Days & Holiday Management
+
+**Vacation days now count only working days!**
+
+- **Weekends excluded**: Saturday and Sunday are never counted as working days
+- **Holidays excluded**: Serbian public holidays can be loaded and managed
+- **Religion-based filtering**: Orthodox employees get Orthodox holidays off, Catholic employees get Catholic holidays off, state holidays apply to everyone
+- **"Manage Non-Working Days" button**: Fetch holidays from web or enter manually
+- **Automatic recalculation**: Existing vacation records are updated when holidays change
+- **2026 holidays included**: 17 holidays pre-configured (8 state, 5 Orthodox, 4 Catholic)
+
+**Quick start:**
+1. Run the app
+2. Click "Manage Non-Working Days" button
+3. Select year 2026
+4. Click "Fetch from Ministry Website"
+5. Review and click "Save"
+
+**Example:** Orthodox employee books Dec 29, 2025 - Jan 5, 2026 (8 calendar days)
+- Old behavior: 8 days deducted
+- New behavior: 4 working days deducted (excludes Jan 1-2 state holidays + Jan 7 Orthodox Christmas + weekend)
+
+Catholic employee booking same dates: 5 working days deducted (Jan 7 is a working day for them)
+
+See `QUICK_START.md`, `IMPLEMENTATION_SUMMARY.md`, and `RELIGION_IMPLEMENTATION.md` for detailed documentation.

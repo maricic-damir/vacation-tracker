@@ -333,12 +333,13 @@ class EmployeeDetailScreen(QWidget):
             current_type=emp.get("contract_type", "fixed_term"),
             current_end_date=emp.get("contract_end_date") or None,
             current_days_at_start=balance.get("days_at_start", 0),
+            current_religion=emp.get("religion", "orthodox"),
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         data = dlg.get_data()
         try:
-            update_employee_contract(conn, self._employee_id, data["contract_type"], data["contract_end_date"])
+            update_employee_contract(conn, self._employee_id, data["contract_type"], data["contract_end_date"], data["religion"])
             if data["contract_type"] == "fixed_term":
                 set_days_at_start(conn, self._employee_id, year, data.get("days_at_start", 0))
         except Exception as e:
@@ -353,7 +354,7 @@ class EmployeeDetailScreen(QWidget):
         conn = self._conn()
         if not conn:
             return
-        from db_helpers import (get_employee, add_vacation_record, count_days_in_range,
+        from db_helpers import (get_employee, add_vacation_record, count_working_days_in_range,
                                  get_available_days_for_deduction, calculate_deduction_breakdown)
         from database import run_completion_job
         emp = get_employee(conn, self._employee_id)
@@ -377,7 +378,7 @@ class EmployeeDetailScreen(QWidget):
         
         if is_completed:
             year = start.year
-            days_needed = count_days_in_range(data["start_date"], data["end_date"])
+            days_needed = count_working_days_in_range(conn, data["start_date"], data["end_date"])
             available = get_available_days_for_deduction(conn, self._employee_id, year)
             breakdown = calculate_deduction_breakdown(
                 days_needed,

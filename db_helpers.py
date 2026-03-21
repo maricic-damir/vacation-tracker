@@ -52,11 +52,12 @@ def insert_employee(
     last_name: str,
     contract_type: str,
     contract_end_date: Optional[str],
+    religion: str = 'orthodox',
 ) -> int:
     cur = conn.execute(
-        """INSERT INTO employees (jmbg, first_name, last_name, contract_type, contract_end_date, is_active)
-           VALUES (?, ?, ?, ?, ?, 1)""",
-        (jmbg.strip(), first_name.strip(), last_name.strip(), contract_type, contract_end_date or None),
+        """INSERT INTO employees (jmbg, first_name, last_name, contract_type, contract_end_date, religion, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, 1)""",
+        (jmbg.strip(), first_name.strip(), last_name.strip(), contract_type, contract_end_date or None, religion),
     )
     eid = cur.lastrowid
     conn.execute("UPDATE employees SET updated_at = datetime('now') WHERE id = ?", (eid,))
@@ -69,11 +70,18 @@ def update_employee_contract(
     employee_id: int,
     contract_type: str,
     contract_end_date: Optional[str],
+    religion: Optional[str] = None,
 ) -> None:
-    conn.execute(
-        "UPDATE employees SET contract_type = ?, contract_end_date = ?, updated_at = datetime('now') WHERE id = ?",
-        (contract_type, contract_end_date or None, employee_id),
-    )
+    if religion:
+        conn.execute(
+            "UPDATE employees SET contract_type = ?, contract_end_date = ?, religion = ?, updated_at = datetime('now') WHERE id = ?",
+            (contract_type, contract_end_date or None, religion, employee_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE employees SET contract_type = ?, contract_end_date = ?, updated_at = datetime('now') WHERE id = ?",
+            (contract_type, contract_end_date or None, employee_id),
+        )
     conn.commit()
 
 
@@ -182,7 +190,7 @@ def total_vacation_left(conn: sqlite3.Connection, employee_id: int, year: int) -
 
 
 def _used_days_in_year(conn: sqlite3.Connection, employee_id: int, year: int) -> int:
-    """Sum calendar days of completed vacation records overlapping the given year."""
+    """Sum working days of completed vacation records overlapping the given year."""
     year_start = f"{year}-01-01"
     year_end = f"{year}-12-31"
     cur = conn.execute(
@@ -200,7 +208,7 @@ def _used_days_in_year(conn: sqlite3.Connection, employee_id: int, year: int) ->
         overlap_start = max(start, y_start)
         overlap_end = min(end, y_end)
         if overlap_start <= overlap_end:
-            total += (overlap_end - overlap_start).days + 1
+            total += count_working_days_in_range(conn, overlap_start.isoformat(), overlap_end.isoformat(), employee_id)
     return total
 
 
@@ -360,3 +368,31 @@ def count_days_in_range(start_date: str, end_date: str) -> int:
     s = date.fromisoformat(start_date)
     e = date.fromisoformat(end_date)
     return (e - s).days + 1
+
+
+def count_working_days_in_range(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
+    """
+    Count working days between start and end dates (inclusive).
+    Excludes weekends (Saturday=5, Sunday=6) and non-working days from database.
+    Filters holidays based on employee's religion:
+    - State holidays apply to everyone
+    - Orthodox holidays apply only to Orthodox employees
+    - Catholic holidays apply only to Catholic employees
+    """
+    from database import is_non_working_day_for_employee
+    
+    s = date.fromisoformat(start_date)
+    e = date.fromisoformat(end_date)
+    
+    working_days = 0
+    current = s
+    
+    while current <= e:
+        # Check if it's a weekend (Monday=0, Sunday=6)
+        if current.weekday() < 5:  # Monday-Friday
+            # Check if it's a holiday for this employee
+            if not is_non_working_day_for_employee(conn, current.isoformat(), employee_id):
+                working_days += 1
+        current = date.fromordinal(current.toordinal() + 1)
+    
+    return working_days
