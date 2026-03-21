@@ -1,4 +1,4 @@
-# Vacation Tracker
+  # Vacation Tracker
 
 Desktop app for tracking employee vacation days (Windows). Uses **PyQt6** and **SQLite**; database file can be stored in a **OneDrive** folder for sharing between two users (non-concurrent use).
 
@@ -14,6 +14,13 @@ Business rules:
 - **Transferred days** from previous year count only until **June** of the current year; after that they are not included in “days left”.
 - **Past start date**: Saving a vacation with start date in the past shows a warning; on confirm, the record is saved and marked as used.
 - **Completion job**: On startup, any record with `end_date < today` is marked completed (used days are already counted in balance).
+
+**Note on deduction order**: When vacation days are used, they are deducted in priority order:
+1. Transferred days (from previous year) - used first
+2. Days at start (this year's allocation) - used second
+3. Earned days (blood donation, overtime, etc.) - used last
+
+The employee detail screen shows remaining days per bucket to track which buckets are being consumed.
 
 ## Requirements
 

@@ -88,6 +88,78 @@ def set_employee_active(conn: sqlite3.Connection, employee_id: int, is_active: b
 # ---------- Balance (transferred only until June) ----------
 
 
+def calculate_deduction_breakdown(
+    days_needed: int,
+    transferred_available: int,
+    at_start_available: int,
+    earned_available: int
+) -> dict[str, int]:
+    """
+    Calculate how to deduct days in order: transferred -> at_start -> earned.
+    Returns dict with keys: 'transferred', 'at_start', 'earned'
+    """
+    remaining = days_needed
+    from_transferred = min(remaining, transferred_available)
+    remaining -= from_transferred
+    
+    from_at_start = min(remaining, at_start_available)
+    remaining -= from_at_start
+    
+    from_earned = min(remaining, earned_available)
+    
+    return {
+        'transferred': from_transferred,
+        'at_start': from_at_start,
+        'earned': from_earned
+    }
+
+
+def get_available_days_for_deduction(
+    conn: sqlite3.Connection,
+    employee_id: int,
+    year: int
+) -> dict[str, int]:
+    """
+    Get available days in each bucket for a specific year, accounting for what's already been used.
+    Returns dict with keys: 'transferred', 'at_start', 'earned'
+    """
+    cur = conn.execute(
+        "SELECT days_at_start, days_transferred FROM employee_year_balance WHERE employee_id = ? AND year = ?",
+        (employee_id, year),
+    )
+    row = cur.fetchone()
+    at_start_total = row[0] if row else 0
+    transferred_total = row[1] if row else 0
+    
+    cur = conn.execute(
+        "SELECT COALESCE(SUM(number_of_days), 0) FROM earned_days WHERE employee_id = ? AND strftime('%Y', earned_date) = ?",
+        (employee_id, str(year)),
+    )
+    earned_total = cur.fetchone()[0]
+    
+    year_start = f"{year}-01-01"
+    year_end = f"{year}-12-31"
+    cur = conn.execute(
+        """SELECT COALESCE(SUM(days_from_transferred), 0), 
+                  COALESCE(SUM(days_from_at_start), 0), 
+                  COALESCE(SUM(days_from_earned), 0)
+           FROM vacation_records
+           WHERE employee_id = ? AND is_completed = 1
+           AND (strftime('%Y', start_date) = ? OR strftime('%Y', end_date) = ? OR (start_date <= ? AND end_date >= ?))""",
+        (employee_id, str(year), str(year), year_start, year_end)
+    )
+    used_row = cur.fetchone()
+    used_transferred = used_row[0] if used_row else 0
+    used_at_start = used_row[1] if used_row else 0
+    used_earned = used_row[2] if used_row else 0
+    
+    return {
+        'transferred': max(0, transferred_total - used_transferred),
+        'at_start': max(0, at_start_total - used_at_start),
+        'earned': max(0, earned_total - used_earned)
+    }
+
+
 def total_vacation_left(conn: sqlite3.Connection, employee_id: int, year: int) -> int:
     """(days_at_start + (transferred if month<=6 else 0) + earned) - used."""
     cur = conn.execute(
@@ -111,11 +183,13 @@ def total_vacation_left(conn: sqlite3.Connection, employee_id: int, year: int) -
 
 def _used_days_in_year(conn: sqlite3.Connection, employee_id: int, year: int) -> int:
     """Sum calendar days of completed vacation records overlapping the given year."""
+    year_start = f"{year}-01-01"
+    year_end = f"{year}-12-31"
     cur = conn.execute(
         """SELECT start_date, end_date FROM vacation_records
            WHERE employee_id = ? AND is_completed = 1
            AND (strftime('%Y', start_date) = ? OR strftime('%Y', end_date) = ? OR (start_date <= ? AND end_date >= ?))""",
-        (employee_id, str(year), str(year), f"{year}-01-01", f"{year}-12-31"),
+        (employee_id, str(year), str(year), year_start, year_end),
     )
     total = 0
     y_start = date(year, 1, 1)
@@ -171,14 +245,44 @@ def get_year_balance(conn: sqlite3.Connection, employee_id: int, year: int) -> d
         (employee_id, str(year)),
     )
     earned = cur.fetchone()[0]
-    used = _used_days_in_year(conn, employee_id, year)
+    
+    year_start = f"{year}-01-01"
+    year_end = f"{year}-12-31"
+    cur = conn.execute(
+        """SELECT COALESCE(SUM(days_from_transferred), 0), 
+                  COALESCE(SUM(days_from_at_start), 0), 
+                  COALESCE(SUM(days_from_earned), 0)
+           FROM vacation_records
+           WHERE employee_id = ? AND is_completed = 1
+           AND (strftime('%Y', start_date) = ? OR strftime('%Y', end_date) = ? OR (start_date <= ? AND end_date >= ?))""",
+        (employee_id, str(year), str(year), year_start, year_end)
+    )
+    used_row = cur.fetchone()
+    used_transferred = used_row[0] if used_row else 0
+    used_at_start = used_row[1] if used_row else 0
+    used_earned = used_row[2] if used_row else 0
+    
+    used_total = used_transferred + used_at_start + used_earned
+    
+    transferred_left = max(0, transferred - used_transferred)
+    at_start_left = max(0, at_start - used_at_start)
+    earned_left = max(0, earned - used_earned)
+    
+    if date.today().month > 6:
+        days_left = at_start_left + earned_left
+    else:
+        days_left = transferred_left + at_start_left + earned_left
+    
     return {
         "year": year,
         "days_at_start": at_start,
         "days_transferred": transferred,
         "days_earned": earned,
-        "days_used": used,
-        "days_left": max(0, at_start + (transferred if date.today().month <= 6 else 0) + earned - used),
+        "days_used": used_total,
+        "days_left": days_left,
+        "transferred_left": transferred_left,
+        "at_start_left": at_start_left,
+        "earned_left": earned_left,
     }
 
 
@@ -237,11 +341,16 @@ def add_vacation_record(
     start_date: str,
     end_date: str,
     is_completed: bool = False,
+    days_from_transferred: int = 0,
+    days_from_at_start: int = 0,
+    days_from_earned: int = 0,
 ) -> int:
     cur = conn.execute(
-        """INSERT INTO vacation_records (employee_id, booking_date, start_date, end_date, is_completed)
-           VALUES (?, ?, ?, ?, ?)""",
-        (employee_id, booking_date, start_date, end_date, 1 if is_completed else 0),
+        """INSERT INTO vacation_records (employee_id, booking_date, start_date, end_date, is_completed,
+                                          days_from_transferred, days_from_at_start, days_from_earned)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (employee_id, booking_date, start_date, end_date, 1 if is_completed else 0,
+         days_from_transferred, days_from_at_start, days_from_earned),
     )
     conn.commit()
     return cur.lastrowid

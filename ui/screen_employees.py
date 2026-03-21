@@ -190,7 +190,8 @@ class EmployeeListScreen(QWidget):
     def _save_vacation(self, employee_id: int, data: dict):
         from datetime import date
         from ui.dialogs import warn_past_start_date
-        from db_helpers import add_vacation_record, count_days_in_range
+        from db_helpers import (add_vacation_record, count_days_in_range, 
+                                 get_available_days_for_deduction, calculate_deduction_breakdown)
         from database import ensure_year_balance, run_completion_job
         conn = self._conn()
         if not conn:
@@ -204,11 +205,33 @@ class EmployeeListScreen(QWidget):
         if is_past and not warn_past_start_date(self, start):
             return
         is_completed = end < date.today()
+        
+        days_from_transferred = 0
+        days_from_at_start = 0
+        days_from_earned = 0
+        
+        if is_completed:
+            year = start.year
+            days_needed = count_days_in_range(data["start_date"], data["end_date"])
+            available = get_available_days_for_deduction(conn, employee_id, year)
+            breakdown = calculate_deduction_breakdown(
+                days_needed,
+                available['transferred'],
+                available['at_start'],
+                available['earned']
+            )
+            days_from_transferred = breakdown['transferred']
+            days_from_at_start = breakdown['at_start']
+            days_from_earned = breakdown['earned']
+        
         try:
             add_vacation_record(
                 conn, employee_id,
                 data["booking_date"], data["start_date"], data["end_date"],
                 is_completed=is_completed,
+                days_from_transferred=days_from_transferred,
+                days_from_at_start=days_from_at_start,
+                days_from_earned=days_from_earned,
             )
             run_completion_job(conn)
         except Exception as e:

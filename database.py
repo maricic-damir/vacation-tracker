@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS vacation_records (
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     is_completed INTEGER NOT NULL DEFAULT 0,
+    days_from_transferred INTEGER NOT NULL DEFAULT 0,
+    days_from_at_start INTEGER NOT NULL DEFAULT 0,
+    days_from_earned INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -67,6 +70,95 @@ CREATE INDEX IF NOT EXISTS ix_earned_date ON earned_days(earned_date);
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    migrate_add_deduction_tracking(conn)
+    conn.commit()
+
+
+def migrate_add_deduction_tracking(conn: sqlite3.Connection) -> None:
+    """Add deduction tracking columns to vacation_records table if they don't exist."""
+    cur = conn.execute("PRAGMA table_info(vacation_records)")
+    columns = {row[1] for row in cur.fetchall()}
+    
+    if "days_from_transferred" not in columns:
+        conn.execute("ALTER TABLE vacation_records ADD COLUMN days_from_transferred INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE vacation_records ADD COLUMN days_from_at_start INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE vacation_records ADD COLUMN days_from_earned INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        recalculate_existing_vacation_deductions(conn)
+
+
+def recalculate_existing_vacation_deductions(conn: sqlite3.Connection) -> None:
+    """
+    Retroactively calculate deduction breakdown for existing completed vacation records.
+    Processes records in chronological order (by start_date) for each employee.
+    """
+    from db_helpers import count_days_in_range, calculate_deduction_breakdown
+    
+    cur = conn.execute("SELECT DISTINCT employee_id FROM vacation_records WHERE is_completed = 1 ORDER BY employee_id")
+    employee_ids = [row[0] for row in cur.fetchall()]
+    
+    for employee_id in employee_ids:
+        cur = conn.execute("""
+            SELECT DISTINCT strftime('%Y', start_date) as year 
+            FROM vacation_records 
+            WHERE employee_id = ? AND is_completed = 1
+            ORDER BY year
+        """, (employee_id,))
+        years = [int(row[0]) for row in cur.fetchall()]
+        
+        for year in years:
+            cur = conn.execute(
+                "SELECT days_at_start, days_transferred FROM employee_year_balance WHERE employee_id = ? AND year = ?",
+                (employee_id, year),
+            )
+            row = cur.fetchone()
+            at_start_available = row[0] if row else 0
+            transferred_available = row[1] if row else 0
+            
+            cur = conn.execute(
+                "SELECT COALESCE(SUM(number_of_days), 0) FROM earned_days WHERE employee_id = ? AND strftime('%Y', earned_date) = ?",
+                (employee_id, str(year)),
+            )
+            earned_available = cur.fetchone()[0]
+            
+            year_start = f"{year}-01-01"
+            year_end = f"{year}-12-31"
+            cur = conn.execute("""
+                SELECT id, start_date, end_date 
+                FROM vacation_records 
+                WHERE employee_id = ? AND is_completed = 1
+                AND (strftime('%Y', start_date) = ? OR strftime('%Y', end_date) = ? OR (start_date <= ? AND end_date >= ?))
+                ORDER BY start_date, id
+            """, (employee_id, str(year), str(year), year_start, year_end))
+            
+            records = cur.fetchall()
+            
+            for record in records:
+                record_id = record[0]
+                start_date = record[1]
+                end_date = record[2]
+                
+                days_needed = count_days_in_range(start_date, end_date)
+                
+                breakdown = calculate_deduction_breakdown(
+                    days_needed,
+                    transferred_available,
+                    at_start_available,
+                    earned_available
+                )
+                
+                conn.execute("""
+                    UPDATE vacation_records 
+                    SET days_from_transferred = ?,
+                        days_from_at_start = ?,
+                        days_from_earned = ?
+                    WHERE id = ?
+                """, (breakdown['transferred'], breakdown['at_start'], breakdown['earned'], record_id))
+                
+                transferred_available -= breakdown['transferred']
+                at_start_available -= breakdown['at_start']
+                earned_available -= breakdown['earned']
+    
     conn.commit()
 
 
@@ -120,12 +212,46 @@ def ensure_year_balance(conn: sqlite3.Connection, employee_id: int, year: int, c
 
 
 def run_completion_job(conn: sqlite3.Connection) -> None:
-    """Mark vacation_records as completed where end_date < today and update updated_at."""
+    """Mark vacation_records as completed where end_date < today and calculate deduction breakdown."""
+    from db_helpers import get_available_days_for_deduction, calculate_deduction_breakdown, count_days_in_range
+    
     today = date.today().isoformat()
-    conn.execute(
-        "UPDATE vacation_records SET is_completed = 1 WHERE is_completed = 0 AND end_date < ?",
-        (today,),
+    
+    cur = conn.execute(
+        """SELECT id, employee_id, start_date, end_date 
+           FROM vacation_records 
+           WHERE is_completed = 0 AND end_date < ?""",
+        (today,)
     )
+    records_to_complete = cur.fetchall()
+    
+    for record in records_to_complete:
+        record_id = record[0]
+        employee_id = record[1]
+        start_date = record[2]
+        end_date = record[3]
+        
+        year = date.fromisoformat(start_date).year
+        days_needed = count_days_in_range(start_date, end_date)
+        
+        available = get_available_days_for_deduction(conn, employee_id, year)
+        breakdown = calculate_deduction_breakdown(
+            days_needed,
+            available['transferred'],
+            available['at_start'],
+            available['earned']
+        )
+        
+        conn.execute(
+            """UPDATE vacation_records 
+               SET is_completed = 1,
+                   days_from_transferred = ?,
+                   days_from_at_start = ?,
+                   days_from_earned = ?
+               WHERE id = ?""",
+            (breakdown['transferred'], breakdown['at_start'], breakdown['earned'], record_id)
+        )
+    
     conn.commit()
 
 
@@ -150,7 +276,7 @@ def rollover_year_for_employee(conn: sqlite3.Connection, employee_id: int, from_
     
     balance = get_year_balance(conn, employee_id, from_year)
     
-    unused_days = max(0, balance["days_at_start"] + balance["days_transferred"] + balance["days_earned"] - balance["days_used"])
+    unused_days = balance["transferred_left"] + balance["at_start_left"] + balance["earned_left"]
     
     days_at_start = prorated_vacation_entitlement_for_year(
         date(to_year, 1, 1),

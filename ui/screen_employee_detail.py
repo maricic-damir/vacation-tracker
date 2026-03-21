@@ -260,8 +260,8 @@ class EmployeeDetailScreen(QWidget):
 
         # Balance (right column; title shows year)
         self._balance_group.setTitle(f"Year {year}")
-        self._bal_days_start.setText(str(balance["days_at_start"]))
-        self._bal_transferred_num.setText(str(balance["days_transferred"]))
+        self._bal_days_start.setText(f"{balance['days_at_start']} ({balance['at_start_left']} left)")
+        self._bal_transferred_num.setText(f"{balance['days_transferred']} ({balance['transferred_left']} left)")
         if date.today().month > 6:
             self._bal_transferred_note.setText(
                 "(Transferred days must be used by June; not counted after June.)"
@@ -270,7 +270,7 @@ class EmployeeDetailScreen(QWidget):
         else:
             self._bal_transferred_note.clear()
             self._bal_transferred_note.hide()
-        self._bal_earned.setText(str(balance["days_earned"]))
+        self._bal_earned.setText(f"{balance['days_earned']} ({balance['earned_left']} left)")
         self._bal_used.setText(str(balance["days_used"]))
         self._bal_left.setText(str(balance["days_left"]))
 
@@ -353,7 +353,8 @@ class EmployeeDetailScreen(QWidget):
         conn = self._conn()
         if not conn:
             return
-        from db_helpers import get_employee, add_vacation_record
+        from db_helpers import (get_employee, add_vacation_record, count_days_in_range,
+                                 get_available_days_for_deduction, calculate_deduction_breakdown)
         from database import run_completion_job
         emp = get_employee(conn, self._employee_id)
         name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}" if emp else ""
@@ -369,11 +370,33 @@ class EmployeeDetailScreen(QWidget):
         if start < date.today() and not warn_past_start_date(self, start):
             return
         is_completed = end < date.today()
+        
+        days_from_transferred = 0
+        days_from_at_start = 0
+        days_from_earned = 0
+        
+        if is_completed:
+            year = start.year
+            days_needed = count_days_in_range(data["start_date"], data["end_date"])
+            available = get_available_days_for_deduction(conn, self._employee_id, year)
+            breakdown = calculate_deduction_breakdown(
+                days_needed,
+                available['transferred'],
+                available['at_start'],
+                available['earned']
+            )
+            days_from_transferred = breakdown['transferred']
+            days_from_at_start = breakdown['at_start']
+            days_from_earned = breakdown['earned']
+        
         try:
             add_vacation_record(
                 conn, self._employee_id,
                 data["booking_date"], data["start_date"], data["end_date"],
                 is_completed=is_completed,
+                days_from_transferred=days_from_transferred,
+                days_from_at_start=days_from_at_start,
+                days_from_earned=days_from_earned,
             )
             run_completion_job(conn)
         except Exception as e:
