@@ -2,20 +2,22 @@
 from datetime import date
 
 from PyQt6.QtWidgets import (
+    QDialog,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QHBoxLayout,
-    QDialog,
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFontMetrics
 
 from ui.dialogs import (
     ScheduleVacationDialog,
@@ -24,6 +26,106 @@ from ui.dialogs import (
     SetTransferredDaysDialog,
     warn_past_start_date,
 )
+
+
+# Details + Year balance form rows — one shared label column width.
+_FORM_ROW_LABELS = (
+    "JMBG:",
+    "First name:",
+    "Last name:",
+    "Contract:",
+    "Status:",
+    "Days at start:",
+    "Transferred:",
+    "Earned:",
+    "Used:",
+    "Left:",
+)
+
+
+def _form_label_column_width(font) -> int:
+    fm = QFontMetrics(font)
+    w = max(fm.horizontalAdvance(s) for s in _FORM_ROW_LABELS)
+    return w + 12
+
+
+def _form_row_label(text: str, column_width: int) -> QLabel:
+    lab = QLabel(text)
+    lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    lab.setFixedWidth(column_width)
+    return lab
+
+
+def _configure_form_columns(form: QFormLayout) -> None:
+    """Two-column layout: labels and values aligned as distinct columns."""
+    form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    form.setHorizontalSpacing(16)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+
+def _configure_balance_form(form: QFormLayout) -> None:
+    """Year panel: tighter gap label→value; values stay compact (not stretched across the group)."""
+    form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    form.setHorizontalSpacing(6)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+
+
+def _form_value_label(
+    text: str,
+    *,
+    align_right: bool = False,
+    word_wrap: bool = False,
+    expand_field: bool = False,
+) -> QLabel:
+    lab = QLabel(text)
+    h = Qt.AlignmentFlag.AlignRight if align_right else Qt.AlignmentFlag.AlignLeft
+    v = Qt.AlignmentFlag.AlignTop if word_wrap else Qt.AlignmentFlag.AlignVCenter
+    lab.setAlignment(h | v)
+    lab.setWordWrap(word_wrap)
+    if word_wrap or expand_field:
+        # Fill the form value column so rows share the same width and wrapping works.
+        lab.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    return lab
+
+
+def _balance_numeric_label(text: str, value_column_width: int) -> QLabel:
+    """Fixed-width value column so digits line up vertically, flush right."""
+    lab = QLabel(text)
+    lab.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    lab.setFixedWidth(value_column_width)
+    lab.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    return lab
+
+
+def _balance_transferred_field(value_column_width: int) -> tuple[QWidget, QLabel, QLabel]:
+    """Same width as other balance values; number + optional note stacked and right-aligned."""
+    wrap = QWidget()
+    wrap.setFixedWidth(value_column_width)
+    wrap.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    v = QVBoxLayout(wrap)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(2)
+    num = QLabel("—")
+    num.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    num.setFixedWidth(value_column_width)
+    num.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    note = QLabel("")
+    note.setWordWrap(True)
+    note.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+    note.setFixedWidth(value_column_width)
+    note.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    note.hide()
+    v.addWidget(num)
+    v.addWidget(note)
+    return wrap, num, note
+
+
+def _table_item(text: str, h_align: Qt.AlignmentFlag) -> QTableWidgetItem:
+    it = QTableWidgetItem(str(text))
+    it.setTextAlignment(int(h_align | Qt.AlignmentFlag.AlignVCenter))
+    return it
 
 
 class EmployeeDetailScreen(QWidget):
@@ -45,14 +147,34 @@ class EmployeeDetailScreen(QWidget):
         header.addWidget(btn_back, 0)
         lay.addLayout(header)
 
-        # Properties (list)
+        # Details (left) + current-year balance (right)
+        details_row = QHBoxLayout()
         self._props_group = QGroupBox("Details")
         self._props_layout = QFormLayout(self._props_group)
-        lay.addWidget(self._props_group)
+        _configure_form_columns(self._props_layout)
+        details_row.addWidget(self._props_group, 1, Qt.AlignmentFlag.AlignTop)
 
-        # Balance summary
-        self._balance_label = QLabel("")
-        lay.addWidget(self._balance_label)
+        self._balance_group = QGroupBox("")
+        self._balance_form = QFormLayout(self._balance_group)
+        _configure_balance_form(self._balance_form)
+        fm = QFontMetrics(self.font())
+        bal_val_w = fm.horizontalAdvance("888") + 20
+        self._bal_days_start = _balance_numeric_label("—", bal_val_w)
+        transferred_wrap, self._bal_transferred_num, self._bal_transferred_note = _balance_transferred_field(
+            bal_val_w
+        )
+        self._bal_earned = _balance_numeric_label("—", bal_val_w)
+        self._bal_used = _balance_numeric_label("—", bal_val_w)
+        self._bal_left = _balance_numeric_label("—", bal_val_w)
+        lw = _form_label_column_width(self.font())
+        self._form_label_w = lw
+        self._balance_form.addRow(_form_row_label("Days at start:", lw), self._bal_days_start)
+        self._balance_form.addRow(_form_row_label("Transferred:", lw), transferred_wrap)
+        self._balance_form.addRow(_form_row_label("Earned:", lw), self._bal_earned)
+        self._balance_form.addRow(_form_row_label("Used:", lw), self._bal_used)
+        self._balance_form.addRow(_form_row_label("Left:", lw), self._bal_left)
+        details_row.addWidget(self._balance_group, 1, Qt.AlignmentFlag.AlignTop)
+        lay.addLayout(details_row)
 
         # Used days off table
         used_group = QGroupBox("Used days off")
@@ -115,45 +237,63 @@ class EmployeeDetailScreen(QWidget):
         # Clear and fill props
         while self._props_layout.rowCount():
             self._props_layout.removeRow(0)
-        self._props_layout.addRow("JMBG:", QLabel(emp.get("jmbg", "")))
-        self._props_layout.addRow("First name:", QLabel(emp.get("first_name", "")))
-        self._props_layout.addRow("Last name:", QLabel(emp.get("last_name", "")))
+        lw = self._form_label_w
+        self._props_layout.addRow(
+            _form_row_label("JMBG:", lw), _form_value_label(emp.get("jmbg", ""), expand_field=True)
+        )
+        self._props_layout.addRow(
+            _form_row_label("First name:", lw), _form_value_label(emp.get("first_name", ""), expand_field=True)
+        )
+        self._props_layout.addRow(
+            _form_row_label("Last name:", lw), _form_value_label(emp.get("last_name", ""), expand_field=True)
+        )
         ct = "Fixed term" if emp.get("contract_type") == "fixed_term" else "Open-ended"
         if emp.get("contract_end_date"):
             ct += f" (until {emp['contract_end_date']})"
-        self._props_layout.addRow("Contract:", QLabel(ct))
-        self._props_layout.addRow("Status:", QLabel("Active" if emp.get("is_active") else "Archived"))
-
-        # Balance text
-        trans_note = ""
-        if date.today().month > 6:
-            trans_note = " (transferred from previous year must be used by June; not counted after June)"
-        self._balance_label.setText(
-            f"Year {year}: Days at start: {balance['days_at_start']} | "
-            f"Transferred from previous: {balance['days_transferred']}{trans_note} | "
-            f"Earned: {balance['days_earned']} | Used: {balance['days_used']} | Left: {balance['days_left']}"
+        self._props_layout.addRow(
+            _form_row_label("Contract:", lw), _form_value_label(ct, word_wrap=True, expand_field=True)
         )
+        self._props_layout.addRow(
+            _form_row_label("Status:", lw),
+            _form_value_label("Active" if emp.get("is_active") else "Archived", expand_field=True),
+        )
+
+        # Balance (right column; title shows year)
+        self._balance_group.setTitle(f"Year {year}")
+        self._bal_days_start.setText(str(balance["days_at_start"]))
+        self._bal_transferred_num.setText(str(balance["days_transferred"]))
+        if date.today().month > 6:
+            self._bal_transferred_note.setText(
+                "(Transferred days must be used by June; not counted after June.)"
+            )
+            self._bal_transferred_note.show()
+        else:
+            self._bal_transferred_note.clear()
+            self._bal_transferred_note.hide()
+        self._bal_earned.setText(str(balance["days_earned"]))
+        self._bal_used.setText(str(balance["days_used"]))
+        self._bal_left.setText(str(balance["days_left"]))
 
         # Used days
         records = list_vacation_records_employee(conn, self._employee_id)
         from db_helpers import count_days_in_range
         self._used_table.setRowCount(len(records))
         for i, r in enumerate(records):
-            self._used_table.setItem(i, 0, QTableWidgetItem(str(r.get("booking_date", ""))))
-            self._used_table.setItem(i, 1, QTableWidgetItem(str(r.get("start_date", ""))))
-            self._used_table.setItem(i, 2, QTableWidgetItem(str(r.get("end_date", ""))))
+            self._used_table.setItem(i, 0, _table_item(r.get("booking_date", ""), Qt.AlignmentFlag.AlignLeft))
+            self._used_table.setItem(i, 1, _table_item(r.get("start_date", ""), Qt.AlignmentFlag.AlignLeft))
+            self._used_table.setItem(i, 2, _table_item(r.get("end_date", ""), Qt.AlignmentFlag.AlignLeft))
             days = count_days_in_range(r["start_date"], r["end_date"])
-            self._used_table.setItem(i, 3, QTableWidgetItem(str(days)))
+            self._used_table.setItem(i, 3, _table_item(days, Qt.AlignmentFlag.AlignRight))
         self._used_table.resizeRowsToContents()
 
         # Earned days
         earned = list_earned_days(conn, self._employee_id)
         self._earned_table.setRowCount(len(earned))
         for i, r in enumerate(earned):
-            self._earned_table.setItem(i, 0, QTableWidgetItem(str(r.get("earned_date", ""))))
-            self._earned_table.setItem(i, 1, QTableWidgetItem(str(r.get("number_of_days", ""))))
-            self._earned_table.setItem(i, 2, QTableWidgetItem(str(r.get("reason_notes", ""))))
-            self._earned_table.setItem(i, 3, QTableWidgetItem(str(r.get("created_at", ""))[:10]))
+            self._earned_table.setItem(i, 0, _table_item(r.get("earned_date", ""), Qt.AlignmentFlag.AlignLeft))
+            self._earned_table.setItem(i, 1, _table_item(r.get("number_of_days", ""), Qt.AlignmentFlag.AlignRight))
+            self._earned_table.setItem(i, 2, _table_item(r.get("reason_notes", ""), Qt.AlignmentFlag.AlignLeft))
+            self._earned_table.setItem(i, 3, _table_item(str(r.get("created_at", ""))[:10], Qt.AlignmentFlag.AlignLeft))
         self._earned_table.resizeRowsToContents()
 
     def _set_transferred_days(self):
