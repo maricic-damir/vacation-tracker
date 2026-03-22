@@ -193,7 +193,7 @@ def total_vacation_left(conn: sqlite3.Connection, employee_id: int, year: int) -
 
 
 def _used_days_in_year(conn: sqlite3.Connection, employee_id: int, year: int) -> int:
-    """Sum working days of completed vacation records overlapping the given year."""
+    """Sum deductible days (working days + weekend days excluding holidays) of completed vacation records overlapping the given year."""
     year_start = f"{year}-01-01"
     year_end = f"{year}-12-31"
     cur = conn.execute(
@@ -211,7 +211,7 @@ def _used_days_in_year(conn: sqlite3.Connection, employee_id: int, year: int) ->
         overlap_start = max(start, y_start)
         overlap_end = min(end, y_end)
         if overlap_start <= overlap_end:
-            total += count_working_days_in_range(conn, overlap_start.isoformat(), overlap_end.isoformat(), employee_id)
+            total += count_total_deductible_days(conn, overlap_start.isoformat(), overlap_end.isoformat(), employee_id)
     return total
 
 
@@ -399,3 +399,40 @@ def count_working_days_in_range(conn: sqlite3.Connection, start_date: str, end_d
         current = date.fromordinal(current.toordinal() + 1)
     
     return working_days
+
+
+def count_weekend_days_excluding_holidays(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
+    """
+    Count weekend days (Saturday and Sunday) that are NOT public holidays.
+    When a weekend day is already a public holiday, it should not be counted.
+    These days will be deducted from the vacation bucket.
+    """
+    from database import is_non_working_day_for_employee
+    
+    s = date.fromisoformat(start_date)
+    e = date.fromisoformat(end_date)
+    
+    weekend_days = 0
+    current = s
+    
+    while current <= e:
+        # Check if it's a weekend (Saturday=5, Sunday=6)
+        if current.weekday() >= 5:  # Saturday or Sunday
+            # Only count if it's NOT a public holiday
+            if not is_non_working_day_for_employee(conn, current.isoformat(), employee_id):
+                weekend_days += 1
+        current = date.fromordinal(current.toordinal() + 1)
+    
+    return weekend_days
+
+
+def count_total_deductible_days(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
+    """
+    Count total days to be deducted from vacation bucket.
+    This includes:
+    - Working days (Mon-Fri excluding holidays)
+    - Weekend days (Sat-Sun) that are NOT holidays
+    """
+    working_days = count_working_days_in_range(conn, start_date, end_date, employee_id)
+    weekend_days = count_weekend_days_excluding_holidays(conn, start_date, end_date, employee_id)
+    return working_days + weekend_days

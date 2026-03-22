@@ -110,7 +110,7 @@ def recalculate_existing_vacation_deductions(conn: sqlite3.Connection) -> None:
     Retroactively calculate deduction breakdown for existing completed vacation records.
     Processes records in chronological order (by start_date) for each employee.
     """
-    from db_helpers import count_days_in_range, calculate_deduction_breakdown
+    from db_helpers import count_days_in_range, calculate_deduction_breakdown, count_total_deductible_days
     
     cur = conn.execute("SELECT DISTINCT employee_id FROM vacation_records WHERE is_completed = 1 ORDER BY employee_id")
     employee_ids = [row[0] for row in cur.fetchall()]
@@ -156,7 +156,7 @@ def recalculate_existing_vacation_deductions(conn: sqlite3.Connection) -> None:
                 start_date = record[1]
                 end_date = record[2]
                 
-                days_needed = count_working_days_in_range(conn, start_date, end_date, employee_id)
+                days_needed = count_total_deductible_days(conn, start_date, end_date, employee_id)
                 
                 breakdown = calculate_deduction_breakdown(
                     days_needed,
@@ -231,7 +231,7 @@ def ensure_year_balance(conn: sqlite3.Connection, employee_id: int, year: int, c
 
 def run_completion_job(conn: sqlite3.Connection) -> None:
     """Mark vacation_records as completed where end_date < today and calculate deduction breakdown."""
-    from db_helpers import get_available_days_for_deduction, calculate_deduction_breakdown, count_working_days_in_range
+    from db_helpers import get_available_days_for_deduction, calculate_deduction_breakdown, count_total_deductible_days
     
     today = date.today().isoformat()
     
@@ -250,7 +250,7 @@ def run_completion_job(conn: sqlite3.Connection) -> None:
         end_date = record[3]
         
         year = date.fromisoformat(start_date).year
-        days_needed = count_working_days_in_range(conn, start_date, end_date, employee_id)
+        days_needed = count_total_deductible_days(conn, start_date, end_date, employee_id)
         
         available = get_available_days_for_deduction(conn, employee_id, year)
         breakdown = calculate_deduction_breakdown(
@@ -378,7 +378,7 @@ def recalculate_all_vacation_records_with_working_days(conn: sqlite3.Connection)
     Recalculate all completed vacation records using working days logic.
     This is run during migration to update existing data.
     """
-    from db_helpers import count_working_days_in_range, calculate_deduction_breakdown
+    from db_helpers import count_working_days_in_range, calculate_deduction_breakdown, count_total_deductible_days
     
     cur = conn.execute("SELECT DISTINCT employee_id FROM vacation_records WHERE is_completed = 1 ORDER BY employee_id")
     employee_ids = [row[0] for row in cur.fetchall()]
@@ -424,7 +424,7 @@ def recalculate_all_vacation_records_with_working_days(conn: sqlite3.Connection)
                 start_date = record[1]
                 end_date = record[2]
                 
-                days_needed = count_working_days_in_range(conn, start_date, end_date, employee_id)
+                days_needed = count_total_deductible_days(conn, start_date, end_date, employee_id)
                 
                 breakdown = calculate_deduction_breakdown(
                     days_needed,

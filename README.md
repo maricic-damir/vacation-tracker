@@ -62,11 +62,13 @@ The EXE will be in `dist/VacationTracker.exe`. Run it on the target Windows mach
 
 ## New: Working Days & Holiday Management
 
-**Vacation days now count only working days!**
+**Vacation days now count working days + requested weekend days!**
 
-- **Weekends excluded**: Saturday and Sunday are never counted as working days
-- **Holidays excluded**: Serbian public holidays can be loaded and managed
+- **Working days counted**: Monday-Friday (excluding holidays)
+- **Weekend days counted**: Saturday-Sunday **are now deducted** unless they are holidays
+- **Holidays excluded**: Serbian public holidays are never deducted
 - **Religion-based filtering**: Orthodox employees get Orthodox holidays off, Catholic employees get Catholic holidays off, state holidays apply to everyone
+- **Validation**: System prevents booking more days than available
 - **"Manage Non-Working Days" button**: Fetch holidays from web or enter manually
 - **Automatic recalculation**: Existing vacation records are updated when holidays change
 - **2026 holidays included**: 17 holidays pre-configured (8 state, 5 Orthodox, 4 Catholic)
@@ -78,10 +80,19 @@ The EXE will be in `dist/VacationTracker.exe`. Run it on the target Windows mach
 4. Click "Fetch from Ministry Website"
 5. Review and click "Save"
 
+**Example:** Request Saturday-Sunday off (no holidays on these dates)
+- **Deducted: 2 days** from your vacation bucket
+
 **Example:** Orthodox employee books Dec 29, 2025 - Jan 5, 2026 (8 calendar days)
 - Old behavior: 8 days deducted
 - New behavior: 4 working days deducted (excludes Jan 1-2 state holidays + Jan 7 Orthodox Christmas + weekend)
 
+**Example:** Request Monday-Sunday (7 days, no holidays)
+- **Deducted: 7 days** (5 working + 2 weekend)
+
+**Example:** Request Saturday-Sunday where Sunday is a holiday
+- **Deducted: 1 day** (only Saturday; Sunday is holiday)
+
 Catholic employee booking same dates: 5 working days deducted (Jan 7 is a working day for them)
 
-See `QUICK_START.md`, `IMPLEMENTATION_SUMMARY.md`, and `RELIGION_IMPLEMENTATION.md` for detailed documentation.
+See `WEEKEND_DEDUCTION_QUICK_REFERENCE.md`, `QUICK_START.md`, `IMPLEMENTATION_SUMMARY.md`, and `RELIGION_IMPLEMENTATION.md` for detailed documentation.

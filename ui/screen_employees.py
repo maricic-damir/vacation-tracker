@@ -272,7 +272,8 @@ class EmployeeListScreen(QWidget):
         from datetime import date
         from ui.dialogs import warn_past_start_date
         from db_helpers import (add_vacation_record, count_working_days_in_range, 
-                                 get_available_days_for_deduction, calculate_deduction_breakdown)
+                                 count_total_deductible_days, get_available_days_for_deduction, 
+                                 calculate_deduction_breakdown)
         from database import ensure_year_balance, run_completion_job
         conn = self._conn()
         if not conn:
@@ -287,14 +288,37 @@ class EmployeeListScreen(QWidget):
             return
         is_completed = end < date.today()
         
+        year = start.year
+        days_needed = count_total_deductible_days(conn, data["start_date"], data["end_date"], employee_id)
+        available = get_available_days_for_deduction(conn, employee_id, year)
+        total_available = available['transferred'] + available['at_start'] + available['earned']
+        
+        if days_needed > total_available:
+            if tr("language") == "Language":
+                QMessageBox.warning(
+                    self,
+                    "Insufficient Days",
+                    f"Cannot schedule vacation.\n\n"
+                    f"Days needed: {days_needed}\n"
+                    f"Days available: {total_available}\n\n"
+                    f"Shortage: {days_needed - total_available} days"
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Недовољно дана",
+                    f"Не може се заказати одсуство.\n\n"
+                    f"Потребно дана: {days_needed}\n"
+                    f"Доступно дана: {total_available}\n\n"
+                    f"Недостаје: {days_needed - total_available} дана"
+                )
+            return
+        
         days_from_transferred = 0
         days_from_at_start = 0
         days_from_earned = 0
         
         if is_completed:
-            year = start.year
-            days_needed = count_working_days_in_range(conn, data["start_date"], data["end_date"])
-            available = get_available_days_for_deduction(conn, employee_id, year)
             breakdown = calculate_deduction_breakdown(
                 days_needed,
                 available['transferred'],

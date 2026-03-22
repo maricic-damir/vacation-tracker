@@ -26,17 +26,30 @@ def test_working_days_calculation():
     
     # Initialize schema
     from database import init_schema
+    from db_helpers import insert_employee
     init_schema(conn)
+    
+    # Create a test employee
+    employee_id = insert_employee(
+        conn,
+        jmbg="1234567890123",
+        first_name="Test",
+        last_name="Employee",
+        contract_type="open_ended",
+        contract_end_date=None,
+        religion="orthodox",
+        start_contract_date="2026-01-01"
+    )
     
     # Test 1: Week without holidays (Mon-Fri)
     print("\nTest 1a: Mon Jan 5 - Fri Jan 9, 2026 (no holidays)")
-    working_days = count_working_days_in_range(conn, '2026-01-05', '2026-01-09')
+    working_days = count_working_days_in_range(conn, '2026-01-05', '2026-01-09', employee_id)
     print(f"  Expected: 5, Got: {working_days}")
     assert working_days == 5, "Should be 5 working days"
     
     # Test 2: Week with weekend
     print("\nTest 1b: Mon Jan 5 - Sun Jan 11, 2026 (includes weekend)")
-    working_days = count_working_days_in_range(conn, '2026-01-05', '2026-01-11')
+    working_days = count_working_days_in_range(conn, '2026-01-05', '2026-01-11', employee_id)
     print(f"  Expected: 5, Got: {working_days}")
     assert working_days == 5, "Should be 5 working days (excludes Sat-Sun)"
     
@@ -49,12 +62,12 @@ def test_working_days_calculation():
     save_non_working_days(conn, holidays)
     
     print("  Testing Thu Jan 1 - Fri Jan 2, 2026 (both holidays)")
-    working_days = count_working_days_in_range(conn, '2026-01-01', '2026-01-02')
+    working_days = count_working_days_in_range(conn, '2026-01-01', '2026-01-02', employee_id)
     print(f"  Expected: 0, Got: {working_days}")
     assert working_days == 0, "Should be 0 working days (both are holidays)"
     
     print("  Testing Wed Dec 31, 2025 - Mon Jan 5, 2026")
-    working_days = count_working_days_in_range(conn, '2025-12-31', '2026-01-05')
+    working_days = count_working_days_in_range(conn, '2025-12-31', '2026-01-05', employee_id)
     print(f"  Expected: 2 (Dec 31 + Jan 5), Got: {working_days}")
     assert working_days == 2, "Should be 2 working days (Wed Dec 31, Mon Jan 5)"
     
@@ -129,7 +142,20 @@ def test_integration():
     conn.row_factory = sqlite3.Row
     
     from database import init_schema
+    from db_helpers import insert_employee
     init_schema(conn)
+    
+    # Create a test employee
+    employee_id = insert_employee(
+        conn,
+        jmbg="1234567890123",
+        first_name="Test",
+        last_name="Employee",
+        contract_type="open_ended",
+        contract_end_date=None,
+        religion="orthodox",
+        start_contract_date="2026-01-01"
+    )
     
     print("\nTest 4a: Fetch and save 2026 holidays...")
     holidays, source = scrape_serbian_holidays(2026)
@@ -139,7 +165,7 @@ def test_integration():
         
         print("\nTest 4b: Calculate working days for Orthodox Easter week...")
         # Apr 10-13, 2026 are all Orthodox Easter holidays
-        working_days = count_working_days_in_range(conn, '2026-04-10', '2026-04-13')
+        working_days = count_working_days_in_range(conn, '2026-04-10', '2026-04-13', employee_id)
         print(f"  Apr 10-13, 2026: {working_days} working days")
         print(f"  Expected: 0 (all are Orthodox holidays)")
         
