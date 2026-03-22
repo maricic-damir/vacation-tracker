@@ -49,6 +49,14 @@ class AllSchedulesScreen(QWidget):
         filter_layout.addWidget(self._first_name_filter_label)
         filter_layout.addWidget(self._first_name_filter)
         
+        # Last Name filter
+        self._last_name_filter_label = QLabel()
+        self._last_name_filter = QLineEdit()
+        self._last_name_filter.setPlaceholderText("Filter...")
+        self._last_name_filter.textChanged.connect(self._apply_filters)
+        filter_layout.addWidget(self._last_name_filter_label)
+        filter_layout.addWidget(self._last_name_filter)
+        
         filter_layout.addStretch()
         lay.addLayout(filter_layout)
         
@@ -83,6 +91,7 @@ class AllSchedulesScreen(QWidget):
         self._btn_back.setText(tr("back_to_list"))
         self._jmbg_filter_label.setText(tr("jmbg") + ":")
         self._first_name_filter_label.setText(tr("first_name") + ":")
+        self._last_name_filter_label.setText(tr("last_name") + ":")
         self._table.setHorizontalHeaderLabels([
             tr("jmbg"), tr("first_name"), tr("last_name"),
             tr("booking_date"), tr("start"), tr("end")
@@ -109,14 +118,16 @@ class AllSchedulesScreen(QWidget):
         # Get filter values
         jmbg_filter = self._jmbg_filter.text().lower()
         first_name_filter = self._first_name_filter.text().lower()
+        last_name_filter = self._last_name_filter.text().lower()
         
         # Filter rows
         filtered_rows = []
         for r in self._all_rows:
             jmbg_match = jmbg_filter in str(r.get("jmbg", "")).lower()
             first_name_match = first_name_filter in str(r.get("first_name", "")).lower()
+            last_name_match = last_name_filter in str(r.get("last_name", "")).lower()
             
-            if jmbg_match and first_name_match:
+            if jmbg_match and first_name_match and last_name_match:
                 filtered_rows.append(r)
         
         # Temporarily disable sorting while populating the table
