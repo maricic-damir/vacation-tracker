@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFontMetrics
+from PyQt6.QtGui import QFontMetrics, QTextDocument
+from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
 
 from ui.dialogs import (
     ScheduleVacationDialog,
@@ -210,6 +211,9 @@ class EmployeeDetailScreen(QWidget):
         btn_earned = QPushButton("Add earned days")
         btn_earned.clicked.connect(self._add_earned_days)
         btn_lay.addWidget(btn_earned)
+        btn_print = QPushButton("Print")
+        btn_print.clicked.connect(self._print_employee)
+        btn_lay.addWidget(btn_print)
         btn_lay.addStretch()
         lay.addLayout(btn_lay)
 
@@ -431,3 +435,155 @@ class EmployeeDetailScreen(QWidget):
     def refresh(self):
         if self._employee_id:
             self._load()
+
+    def _print_employee(self):
+        """Print employee details with the same layout as displayed on screen."""
+        if not self._employee_id:
+            return
+        
+        conn = self._conn()
+        if not conn:
+            return
+        
+        from db_helpers import get_employee, get_year_balance, list_vacation_records_employee, list_earned_days, count_days_in_range
+        from database import ensure_year_balance
+        
+        emp = get_employee(conn, self._employee_id)
+        if not emp:
+            return
+        
+        year = date.today().year
+        ensure_year_balance(conn, self._employee_id, year, emp["contract_type"])
+        balance = get_year_balance(conn, self._employee_id, year)
+        
+        full_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+        
+        html = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; font-size: 9pt; }}
+                h1 {{ font-size: 13.5pt; margin-bottom: 20px; }}
+                h2 {{ font-size: 10.5pt; margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid #ccc; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 9pt; }}
+                th {{ background-color: #f0f0f0; text-align: left; padding: 8px; border: 1px solid #ddd; font-weight: bold; }}
+                td {{ padding: 8px; border: 1px solid #ddd; }}
+                .right-align {{ text-align: right; }}
+                .label-cell {{ font-weight: bold; width: 150px; }}
+                .top-table {{ width: 100%; margin-bottom: 30px; }}
+                .gap-cell {{ width: 30px; border: none; background: none; }}
+            </style>
+        </head>
+        <body>
+            <h1>{full_name}</h1>
+            
+            <table class="top-table">
+                <tr>
+                    <th colspan="2">Details</th>
+                    <td class="gap-cell"></td>
+                    <th colspan="2">Year {year}</th>
+                </tr>
+                <tr>
+                    <td class="label-cell">JMBG:</td>
+                    <td>{emp.get('jmbg', '')}</td>
+                    <td class="gap-cell"></td>
+                    <td class="label-cell">Days at start:</td>
+                    <td>{balance['days_at_start']} ({balance['at_start_left']} left)</td>
+                </tr>
+                <tr>
+                    <td class="label-cell">First name:</td>
+                    <td>{emp.get('first_name', '')}</td>
+                    <td class="gap-cell"></td>
+                    <td class="label-cell">Transferred:</td>
+                    <td>{balance['days_transferred']} ({balance['transferred_left']} left)</td>
+                </tr>
+                <tr>
+                    <td class="label-cell">Last name:</td>
+                    <td>{emp.get('last_name', '')}</td>
+                    <td class="gap-cell"></td>
+                    <td class="label-cell">Earned:</td>
+                    <td>{balance['days_earned']} ({balance['earned_left']} left)</td>
+                </tr>
+                <tr>
+                    <td class="label-cell">Contract:</td>
+                    <td>{"Fixed term" if emp.get('contract_type') == 'fixed_term' else 'Open-ended'}{f" (until {emp['contract_end_date']})" if emp.get('contract_end_date') else ''}</td>
+                    <td class="gap-cell"></td>
+                    <td class="label-cell">Used:</td>
+                    <td>{balance['days_used']}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell">Status:</td>
+                    <td>{"Active" if emp.get('is_active') else 'Archived'}</td>
+                    <td class="gap-cell"></td>
+                    <td class="label-cell">Left:</td>
+                    <td>{balance['days_left']}</td>
+                </tr>
+            </table>
+            
+            <h2>Used days off</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Booking date</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th class="right-align">Days</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        
+        records = list_vacation_records_employee(conn, self._employee_id)
+        for r in records:
+            days = count_days_in_range(r["start_date"], r["end_date"])
+            html += f"""
+                    <tr>
+                        <td>{r.get('booking_date', '')}</td>
+                        <td>{r.get('start_date', '')}</td>
+                        <td>{r.get('end_date', '')}</td>
+                        <td class="right-align">{days}</td>
+                    </tr>
+            """
+        
+        html += """
+                </tbody>
+            </table>
+            
+            <h2>Earned days</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date earned</th>
+                        <th class="right-align">Days</th>
+                        <th>Reason / notes</th>
+                        <th>Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        
+        earned = list_earned_days(conn, self._employee_id)
+        for r in earned:
+            html += f"""
+                    <tr>
+                        <td>{r.get('earned_date', '')}</td>
+                        <td class="right-align">{r.get('number_of_days', '')}</td>
+                        <td>{r.get('reason_notes', '')}</td>
+                        <td>{str(r.get('created_at', ''))[:10]}</td>
+                    </tr>
+            """
+        
+        html += """
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+        
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        print_dialog = QPrintDialog(printer, self)
+        
+        if print_dialog.exec() == QDialog.DialogCode.Accepted:
+            document = QTextDocument()
+            document.setHtml(html)
+            document.print(printer)
