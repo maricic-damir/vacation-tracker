@@ -35,7 +35,8 @@ _FORM_ROW_LABELS = (
     "JMBG:",
     "First name:",
     "Last name:",
-    "Contract:",
+    "Contract start date:",
+    "Contract end date:",
     "Status:",
     "Days at start:",
     "Transferred:",
@@ -70,7 +71,7 @@ def _configure_balance_form(form: QFormLayout) -> None:
     """Year panel: tighter gap label→value; values stay compact (not stretched across the group)."""
     form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-    form.setHorizontalSpacing(6)
+    form.setHorizontalSpacing(30)
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
 
 
@@ -98,6 +99,7 @@ def _balance_numeric_label(text: str, value_column_width: int) -> QLabel:
     lab.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     lab.setFixedWidth(value_column_width)
     lab.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    lab.setStyleSheet("padding: 4px 12px;")
     return lab
 
 
@@ -113,11 +115,13 @@ def _balance_transferred_field(value_column_width: int) -> tuple[QWidget, QLabel
     num.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     num.setFixedWidth(value_column_width)
     num.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    num.setStyleSheet("padding: 4px 12px;")
     note = QLabel("")
     note.setWordWrap(True)
     note.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
     note.setFixedWidth(value_column_width)
     note.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    note.setStyleSheet("padding: 2px 12px; font-size: 9pt;")
     note.hide()
     v.addWidget(num)
     v.addWidget(note)
@@ -160,7 +164,7 @@ class EmployeeDetailScreen(QWidget):
         self._balance_form = QFormLayout(self._balance_group)
         _configure_balance_form(self._balance_form)
         fm = QFontMetrics(self.font())
-        bal_val_w = fm.horizontalAdvance("888") + 20
+        bal_val_w = fm.horizontalAdvance("888 (888 left)") + 60
         self._bal_days_start = _balance_numeric_label("—", bal_val_w)
         transferred_wrap, self._bal_transferred_num, self._bal_transferred_note = _balance_transferred_field(
             bal_val_w
@@ -272,12 +276,22 @@ class EmployeeDetailScreen(QWidget):
         self._props_layout.addRow(
             _form_row_label(tr("last_name") + ":", lw), _form_value_label(emp.get("last_name", ""), expand_field=True)
         )
+        
+        # Contract start date
+        start_date = emp.get("start_contract_date", "")
+        self._props_layout.addRow(
+            _form_row_label(tr("contract_start_date") + ":", lw), 
+            _form_value_label(start_date if start_date else "-", expand_field=True)
+        )
+        
+        # Contract end date
         ct = tr("fixed_term") if emp.get("contract_type") == "fixed_term" else tr("open_ended")
         if emp.get("contract_end_date"):
             ct += f" ({tr('until')} {emp['contract_end_date']})"
         self._props_layout.addRow(
-            _form_row_label(tr("contract") + ":", lw), _form_value_label(ct, word_wrap=True, expand_field=True)
+            _form_row_label(tr("contract_end_date") + ":", lw), _form_value_label(ct, word_wrap=True, expand_field=True)
         )
+        
         self._props_layout.addRow(
             _form_row_label(tr("status") + ":", lw),
             _form_value_label(tr("active") if emp.get("is_active") else tr("archived"), expand_field=True),
@@ -524,18 +538,25 @@ class EmployeeDetailScreen(QWidget):
                     <td>{balance['days_earned']} ({balance['earned_left']} {tr('left')})</td>
                 </tr>
                 <tr>
-                    <td class="label-cell">{tr('contract')}:</td>
-                    <td>{tr('fixed_term') if emp.get('contract_type') == 'fixed_term' else tr('open_ended')}{f" ({tr('until')} {emp['contract_end_date']})" if emp.get('contract_end_date') else ''}</td>
+                    <td class="label-cell">{tr('contract_start_date')}:</td>
+                    <td>{emp.get('start_contract_date', '') or '-'}</td>
                     <td class="gap-cell"></td>
                     <td class="label-cell">{tr('used')}:</td>
                     <td>{balance['days_used']}</td>
                 </tr>
                 <tr>
-                    <td class="label-cell">{tr('status')}:</td>
-                    <td>{tr('active') if emp.get('is_active') else tr('archived')}</td>
+                    <td class="label-cell">{tr('contract_end_date')}:</td>
+                    <td>{tr('fixed_term') if emp.get('contract_type') == 'fixed_term' else tr('open_ended')}{f" ({tr('until')} {emp['contract_end_date']})" if emp.get('contract_end_date') else ''}</td>
                     <td class="gap-cell"></td>
                     <td class="label-cell">{tr('left')}:</td>
                     <td>{balance['days_left']}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell">{tr('status')}:</td>
+                    <td>{tr('active') if emp.get('is_active') else tr('archived')}</td>
+                    <td class="gap-cell"></td>
+                    <td class="label-cell"></td>
+                    <td></td>
                 </tr>
             </table>
             
