@@ -27,6 +27,7 @@ from ui.dialogs import (
     SetTransferredDaysDialog,
     warn_past_start_date,
 )
+from translations import tr
 
 
 # Details + Year balance form rows — one shared label column width.
@@ -143,9 +144,9 @@ class EmployeeDetailScreen(QWidget):
         self._employee_title = QLabel("")
         self._employee_title.setWordWrap(False)
         header.addWidget(self._employee_title, 1)
-        btn_back = QPushButton("← Back to list")
-        btn_back.clicked.connect(lambda: on_back() if on_back else None)
-        header.addWidget(btn_back, 0)
+        self._btn_back = QPushButton()
+        self._btn_back.clicked.connect(lambda: on_back() if on_back else None)
+        header.addWidget(self._btn_back, 0)
         lay.addLayout(header)
 
         # Details (left) + current-year balance (right)
@@ -178,48 +179,65 @@ class EmployeeDetailScreen(QWidget):
         lay.addLayout(details_row)
 
         # Used days off table
-        used_group = QGroupBox("Used days off")
+        self._used_group = QGroupBox()
         self._used_table = QTableWidget()
         self._used_table.setColumnCount(4)
-        self._used_table.setHorizontalHeaderLabels(["Booking date", "Start", "End", "Days"])
-        self._used_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        used_layout = QVBoxLayout(used_group)
+        used_layout = QVBoxLayout(self._used_group)
         used_layout.addWidget(self._used_table)
-        lay.addWidget(used_group)
+        lay.addWidget(self._used_group)
 
         # Earned days table
-        earned_group = QGroupBox("Earned days")
+        self._earned_group = QGroupBox()
         self._earned_table = QTableWidget()
         self._earned_table.setColumnCount(4)
-        self._earned_table.setHorizontalHeaderLabels(["Date earned", "Days", "Reason / notes", "Created"])
         self._earned_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        earned_layout = QVBoxLayout(earned_group)
+        earned_layout = QVBoxLayout(self._earned_group)
         earned_layout.addWidget(self._earned_table)
-        lay.addWidget(earned_group)
+        lay.addWidget(self._earned_group)
 
         # Buttons
         btn_lay = QHBoxLayout()
-        btn_contract = QPushButton("Contract date / type")
-        btn_contract.clicked.connect(self._edit_contract)
-        btn_lay.addWidget(btn_contract)
-        btn_transferred = QPushButton("Set transferred days")
-        btn_transferred.clicked.connect(self._set_transferred_days)
-        btn_lay.addWidget(btn_transferred)
-        btn_schedule = QPushButton("Schedule vacation / day off")
-        btn_schedule.clicked.connect(self._schedule_vacation)
-        btn_lay.addWidget(btn_schedule)
-        btn_earned = QPushButton("Add earned days")
-        btn_earned.clicked.connect(self._add_earned_days)
-        btn_lay.addWidget(btn_earned)
-        btn_print = QPushButton("Print")
-        btn_print.clicked.connect(self._print_employee)
-        btn_lay.addWidget(btn_print)
+        self._btn_contract = QPushButton()
+        self._btn_contract.clicked.connect(self._edit_contract)
+        btn_lay.addWidget(self._btn_contract)
+        self._btn_transferred = QPushButton()
+        self._btn_transferred.clicked.connect(self._set_transferred_days)
+        btn_lay.addWidget(self._btn_transferred)
+        self._btn_schedule = QPushButton()
+        self._btn_schedule.clicked.connect(self._schedule_vacation)
+        btn_lay.addWidget(self._btn_schedule)
+        self._btn_earned = QPushButton()
+        self._btn_earned.clicked.connect(self._add_earned_days)
+        btn_lay.addWidget(self._btn_earned)
+        self._btn_print = QPushButton()
+        self._btn_print.clicked.connect(self._print_employee)
+        btn_lay.addWidget(self._btn_print)
         btn_lay.addStretch()
         lay.addLayout(btn_lay)
 
     def set_employee(self, employee_id: int):
         self._employee_id = employee_id
         self._load()
+    
+    def _update_ui_text(self):
+        """Update all UI text with translations."""
+        self._btn_back.setText(tr("back_to_list"))
+        self._props_group.setTitle(tr("details"))
+        self._used_group.setTitle(tr("used_days_off"))
+        self._earned_group.setTitle(tr("earned_days"))
+        self._btn_contract.setText(tr("contract_date_type"))
+        self._btn_transferred.setText(tr("set_transferred_days"))
+        self._btn_schedule.setText(tr("schedule_vacation"))
+        self._btn_earned.setText(tr("add_earned_days"))
+        self._btn_print.setText(tr("print"))
+        
+        # Update table headers
+        self._used_table.setHorizontalHeaderLabels([
+            tr("booking_date"), tr("start"), tr("end"), tr("days")
+        ])
+        self._earned_table.setHorizontalHeaderLabels([
+            tr("date_earned"), tr("days"), tr("reason_notes"), tr("created")
+        ])
 
     def _load(self):
         conn = self._conn()
@@ -227,6 +245,9 @@ class EmployeeDetailScreen(QWidget):
             return
         from db_helpers import get_employee, get_year_balance, list_vacation_records_employee, list_earned_days
         from database import ensure_year_balance
+
+        # Update UI text
+        self._update_ui_text()
 
         emp = get_employee(conn, self._employee_id)
         if not emp:
@@ -243,38 +264,36 @@ class EmployeeDetailScreen(QWidget):
             self._props_layout.removeRow(0)
         lw = self._form_label_w
         self._props_layout.addRow(
-            _form_row_label("JMBG:", lw), _form_value_label(emp.get("jmbg", ""), expand_field=True)
+            _form_row_label(tr("jmbg") + ":", lw), _form_value_label(emp.get("jmbg", ""), expand_field=True)
         )
         self._props_layout.addRow(
-            _form_row_label("First name:", lw), _form_value_label(emp.get("first_name", ""), expand_field=True)
+            _form_row_label(tr("first_name") + ":", lw), _form_value_label(emp.get("first_name", ""), expand_field=True)
         )
         self._props_layout.addRow(
-            _form_row_label("Last name:", lw), _form_value_label(emp.get("last_name", ""), expand_field=True)
+            _form_row_label(tr("last_name") + ":", lw), _form_value_label(emp.get("last_name", ""), expand_field=True)
         )
-        ct = "Fixed term" if emp.get("contract_type") == "fixed_term" else "Open-ended"
+        ct = tr("fixed_term") if emp.get("contract_type") == "fixed_term" else tr("open_ended")
         if emp.get("contract_end_date"):
-            ct += f" (until {emp['contract_end_date']})"
+            ct += f" ({tr('until')} {emp['contract_end_date']})"
         self._props_layout.addRow(
-            _form_row_label("Contract:", lw), _form_value_label(ct, word_wrap=True, expand_field=True)
+            _form_row_label(tr("contract") + ":", lw), _form_value_label(ct, word_wrap=True, expand_field=True)
         )
         self._props_layout.addRow(
-            _form_row_label("Status:", lw),
-            _form_value_label("Active" if emp.get("is_active") else "Archived", expand_field=True),
+            _form_row_label(tr("status") + ":", lw),
+            _form_value_label(tr("active") if emp.get("is_active") else tr("archived"), expand_field=True),
         )
 
         # Balance (right column; title shows year)
-        self._balance_group.setTitle(f"Year {year}")
-        self._bal_days_start.setText(f"{balance['days_at_start']} ({balance['at_start_left']} left)")
-        self._bal_transferred_num.setText(f"{balance['days_transferred']} ({balance['transferred_left']} left)")
+        self._balance_group.setTitle(f"{tr('year')} {year}")
+        self._bal_days_start.setText(f"{balance['days_at_start']} ({balance['at_start_left']} {tr('left')})")
+        self._bal_transferred_num.setText(f"{balance['days_transferred']} ({balance['transferred_left']} {tr('left')})")
         if date.today().month > 6:
-            self._bal_transferred_note.setText(
-                "(Transferred days must be used by June; not counted after June.)"
-            )
+            self._bal_transferred_note.setText(tr("transferred_note"))
             self._bal_transferred_note.show()
         else:
             self._bal_transferred_note.clear()
             self._bal_transferred_note.hide()
-        self._bal_earned.setText(f"{balance['days_earned']} ({balance['earned_left']} left)")
+        self._bal_earned.setText(f"{balance['days_earned']} ({balance['earned_left']} {tr('left')})")
         self._bal_used.setText(str(balance["days_used"]))
         self._bal_left.setText(str(balance["days_left"]))
 
@@ -370,7 +389,7 @@ class EmployeeDetailScreen(QWidget):
         start = date.fromisoformat(data["start_date"])
         end = date.fromisoformat(data["end_date"])
         if start > end:
-            QMessageBox.warning(self, "Invalid dates", "Start date must be before or equal to end date.")
+            QMessageBox.warning(self, tr("invalid_dates"), tr("start_before_end"))
             return
         if start < date.today() and not warn_past_start_date(self, start):
             return
@@ -405,7 +424,7 @@ class EmployeeDetailScreen(QWidget):
             )
             run_completion_job(conn)
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("error"), str(e))
             return
         self._load()
         self._refresh()
@@ -427,7 +446,7 @@ class EmployeeDetailScreen(QWidget):
                 data["earned_date"], data["number_of_days"], data["reason_notes"],
             )
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("error"), str(e))
             return
         self._load()
         self._refresh()
@@ -479,55 +498,55 @@ class EmployeeDetailScreen(QWidget):
             
             <table class="top-table">
                 <tr>
-                    <th colspan="2">Details</th>
+                    <th colspan="2">{tr('details')}</th>
                     <td class="gap-cell"></td>
-                    <th colspan="2">Year {year}</th>
+                    <th colspan="2">{tr('year')} {year}</th>
                 </tr>
                 <tr>
-                    <td class="label-cell">JMBG:</td>
+                    <td class="label-cell">{tr('jmbg')}:</td>
                     <td>{emp.get('jmbg', '')}</td>
                     <td class="gap-cell"></td>
-                    <td class="label-cell">Days at start:</td>
-                    <td>{balance['days_at_start']} ({balance['at_start_left']} left)</td>
+                    <td class="label-cell">{tr('days_at_start')}:</td>
+                    <td>{balance['days_at_start']} ({balance['at_start_left']} {tr('left')})</td>
                 </tr>
                 <tr>
-                    <td class="label-cell">First name:</td>
+                    <td class="label-cell">{tr('first_name')}:</td>
                     <td>{emp.get('first_name', '')}</td>
                     <td class="gap-cell"></td>
-                    <td class="label-cell">Transferred:</td>
-                    <td>{balance['days_transferred']} ({balance['transferred_left']} left)</td>
+                    <td class="label-cell">{tr('transferred')}:</td>
+                    <td>{balance['days_transferred']} ({balance['transferred_left']} {tr('left')})</td>
                 </tr>
                 <tr>
-                    <td class="label-cell">Last name:</td>
+                    <td class="label-cell">{tr('last_name')}:</td>
                     <td>{emp.get('last_name', '')}</td>
                     <td class="gap-cell"></td>
-                    <td class="label-cell">Earned:</td>
-                    <td>{balance['days_earned']} ({balance['earned_left']} left)</td>
+                    <td class="label-cell">{tr('earned')}:</td>
+                    <td>{balance['days_earned']} ({balance['earned_left']} {tr('left')})</td>
                 </tr>
                 <tr>
-                    <td class="label-cell">Contract:</td>
-                    <td>{"Fixed term" if emp.get('contract_type') == 'fixed_term' else 'Open-ended'}{f" (until {emp['contract_end_date']})" if emp.get('contract_end_date') else ''}</td>
+                    <td class="label-cell">{tr('contract')}:</td>
+                    <td>{tr('fixed_term') if emp.get('contract_type') == 'fixed_term' else tr('open_ended')}{f" ({tr('until')} {emp['contract_end_date']})" if emp.get('contract_end_date') else ''}</td>
                     <td class="gap-cell"></td>
-                    <td class="label-cell">Used:</td>
+                    <td class="label-cell">{tr('used')}:</td>
                     <td>{balance['days_used']}</td>
                 </tr>
                 <tr>
-                    <td class="label-cell">Status:</td>
-                    <td>{"Active" if emp.get('is_active') else 'Archived'}</td>
+                    <td class="label-cell">{tr('status')}:</td>
+                    <td>{tr('active') if emp.get('is_active') else tr('archived')}</td>
                     <td class="gap-cell"></td>
-                    <td class="label-cell">Left:</td>
+                    <td class="label-cell">{tr('left')}:</td>
                     <td>{balance['days_left']}</td>
                 </tr>
             </table>
             
-            <h2>Used days off</h2>
+            <h2>{tr('used_days_off')}</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Booking date</th>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th class="right-align">Days</th>
+                        <th>{tr('booking_date')}</th>
+                        <th>{tr('start')}</th>
+                        <th>{tr('end')}</th>
+                        <th class="right-align">{tr('days')}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -549,18 +568,18 @@ class EmployeeDetailScreen(QWidget):
                 </tbody>
             </table>
             
-            <h2>Earned days</h2>
+            <h2>{}</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Date earned</th>
-                        <th class="right-align">Days</th>
-                        <th>Reason / notes</th>
-                        <th>Created</th>
+                        <th>{}</th>
+                        <th class="right-align">{}</th>
+                        <th>{}</th>
+                        <th>{}</th>
                     </tr>
                 </thead>
                 <tbody>
-        """
+        """.format(tr('earned_days'), tr('date_earned'), tr('days'), tr('reason_notes'), tr('created'))
         
         earned = list_earned_days(conn, self._employee_id)
         for r in earned:

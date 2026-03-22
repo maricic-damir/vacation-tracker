@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+from translations import tr
+
 
 class AllSchedulesScreen(QWidget):
     def __init__(self, conn_getter, refresh_callback, on_back):
@@ -23,25 +25,21 @@ class AllSchedulesScreen(QWidget):
         lay = QVBoxLayout(self)
         self._table = QTableWidget()
         self._table.setColumnCount(6)
-        self._table.setHorizontalHeaderLabels(
-            ["JMBG", "First name", "Last name", "Booking date", "Start date", "End date"]
-        )
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         lay.addWidget(self._table)
-        btn_back = QPushButton("← Back to employee list")
-        btn_back.clicked.connect(lambda: on_back() if on_back else None)
-        f = QFont(btn_back.font())
+        self._btn_back = QPushButton()
+        self._btn_back.clicked.connect(lambda: on_back() if on_back else None)
+        f = QFont(self._btn_back.font())
         f.setPointSizeF(max(8.5, f.pointSizeF() - 1.0))
-        btn_back.setFont(f)
-        btn_back.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        # Comfortable inset between the frame and the caption (Qt Style Sheets: `padding`).
-        btn_back.setStyleSheet(
+        self._btn_back.setFont(f)
+        self._btn_back.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self._btn_back.setStyleSheet(
             "QPushButton { margin: 0px; padding: 10px 14px; min-width: 0px; min-height: 0px; }"
         )
         back_row = QHBoxLayout()
         back_row.addStretch(1)
-        back_row.addWidget(btn_back, 0, Qt.AlignmentFlag.AlignHCenter)
+        back_row.addWidget(self._btn_back, 0, Qt.AlignmentFlag.AlignHCenter)
         back_row.addStretch(1)
         lay.addLayout(back_row)
 
@@ -50,6 +48,14 @@ class AllSchedulesScreen(QWidget):
         if not conn:
             return
         from db_helpers import list_vacation_records_all
+        
+        # Update UI text
+        self._btn_back.setText(tr("back_to_list"))
+        self._table.setHorizontalHeaderLabels([
+            tr("jmbg"), tr("first_name"), tr("last_name"),
+            tr("booking_date"), tr("start"), tr("end")
+        ])
+        
         rows = list_vacation_records_all(conn)
         self._table.setRowCount(len(rows))
         for i, r in enumerate(rows):

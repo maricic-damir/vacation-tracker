@@ -65,3 +65,27 @@ def clear_db_path() -> None:
         cfg.remove_option("app", "db_path")
         with open(path, "w", encoding="utf-8") as f:
             cfg.write(f)
+
+
+def get_language() -> str:
+    """Return saved language preference or default to 'en'."""
+    path = _config_path()
+    if not path.exists():
+        return "en"
+    cfg = configparser.ConfigParser()
+    cfg.read(path, encoding="utf-8")
+    return cfg.get("app", "language", fallback="en")
+
+
+def set_language(lang_code: str) -> None:
+    """Save language preference to config."""
+    _config_dir().mkdir(parents=True, exist_ok=True)
+    path = _config_path()
+    cfg = configparser.ConfigParser()
+    if path.exists():
+        cfg.read(path, encoding="utf-8")
+    if "app" not in cfg:
+        cfg.add_section("app")
+    cfg.set("app", "language", lang_code)
+    with open(path, "w", encoding="utf-8") as f:
+        cfg.write(f)

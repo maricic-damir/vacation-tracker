@@ -28,6 +28,7 @@ from PyQt6.QtCore import QDate, Qt
 from typing import Optional
 
 from entitlement import prorated_vacation_entitlement_for_year
+from translations import tr
 
 
 def choose_or_create_db_path(parent: Optional[QWidget]) -> Optional[str]:
@@ -60,16 +61,28 @@ def locate_db_path(parent: Optional[QWidget]) -> Optional[str]:
 
 def warn_past_start_date(parent: QWidget, start_date: date) -> bool:
     """Warn that start date is in the past; return True if user confirms."""
-    return (
-        QMessageBox.question(
-            parent,
-            "Start date in the past",
-            f"The start date ({start_date}) is in the past. Do you want to save anyway? The leave will be marked as used.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+    if tr("language") == "Language":  # English
+        return (
+            QMessageBox.question(
+                parent,
+                "Start date in the past",
+                f"The start date ({start_date}) is in the past. Do you want to save anyway? The leave will be marked as used.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
         )
-        == QMessageBox.StandardButton.Yes
-    )
+    else:  # Serbian
+        return (
+            QMessageBox.question(
+                parent,
+                "Датум почетка у прошлости",
+                f"Датум почетка ({start_date}) је у прошлости. Да ли желите да сачувате? Одсуство ће бити означено као искоришћено.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        )
 
 
 # ---------- Add employee ----------
@@ -78,30 +91,36 @@ def warn_past_start_date(parent: QWidget, start_date: date) -> bool:
 class AddEmployeeDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add employee")
+        self.setWindowTitle(tr("add_new_employee"))
         lay = QFormLayout(self)
         self.jmbg = QLineEdit()
         self.jmbg.setPlaceholderText("13 digits")
-        lay.addRow("JMBG:", self.jmbg)
+        lay.addRow(tr("jmbg") + ":", self.jmbg)
         self.first_name = QLineEdit()
-        lay.addRow("First name:", self.first_name)
+        lay.addRow(tr("first_name") + ":", self.first_name)
         self.last_name = QLineEdit()
-        lay.addRow("Last name:", self.last_name)
+        lay.addRow(tr("last_name") + ":", self.last_name)
         self.religion = QComboBox()
-        self.religion.addItems(["Orthodox", "Catholic"])
-        lay.addRow("Religion:", self.religion)
+        self.religion.addItems([tr("orthodox"), tr("catholic")])
+        lay.addRow(tr("religion") + ":", self.religion)
         self.contract_type = QComboBox()
-        self.contract_type.addItems(["Fixed term (with end date)", "Open-ended (no end date)"])
+        if tr("language") == "Language":  # English
+            self.contract_type.addItems(["Fixed term (with end date)", "Open-ended (no end date)"])
+        else:  # Serbian
+            self.contract_type.addItems(["Одређено (са датумом истека)", "Неодређено (без датума истека)"])
         self.contract_type.currentIndexChanged.connect(self._on_contract_type_changed)
-        lay.addRow("Contract type:", self.contract_type)
+        lay.addRow(tr("contract_type") + ":", self.contract_type)
         self.contract_end_date = QDateEdit()
         self.contract_end_date.setCalendarPopup(True)
         self.contract_end_date.setDate(QDate.currentDate().addYears(1))
         self.contract_end_date.dateChanged.connect(lambda _d: self._update_prorated_label())
-        lay.addRow("Contract end date:", self.contract_end_date)
+        lay.addRow(tr("contract_end_date") + ":", self.contract_end_date)
         self._prorated_label = QLabel()
         self._prorated_label.setWordWrap(True)
-        lay.addRow("Vacation days (this year, prorated):", self._prorated_label)
+        if tr("language") == "Language":  # English
+            lay.addRow("Vacation days (this year, prorated):", self._prorated_label)
+        else:  # Serbian
+            lay.addRow("Дани годишњег (ова година, пропорционално):", self._prorated_label)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._on_accept)
         bb.rejected.connect(self.reject)
@@ -119,25 +138,37 @@ class AddEmployeeDialog(QDialog):
             self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None
         )
         n = prorated_vacation_entitlement_for_year(date.today(), end_str)
-        self._prorated_label.setText(
-            str(n)
-            + " (based on today's date, contract type, and end of employment within this year)"
-        )
+        if tr("language") == "Language":  # English
+            self._prorated_label.setText(
+                str(n)
+                + " (based on today's date, contract type, and end of employment within this year)"
+            )
+        else:  # Serbian
+            self._prorated_label.setText(
+                str(n)
+                + " (на основу данашњег датума, типа уговора и краја запослења у овој години)"
+            )
 
     def _validate_jmbg(self) -> Optional[str]:
         """Return None if valid, else error message."""
         j = self.jmbg.text().strip()
         if len(j) != 13 or not j.isdigit():
-            return "JMBG must be exactly 13 digits."
+            if tr("language") == "Language":  # English
+                return "JMBG must be exactly 13 digits."
+            else:  # Serbian
+                return "ЈМБГ мора бити тачно 13 цифара."
         return None
 
     def _on_accept(self):
         err = self._validate_jmbg()
         if err:
-            QMessageBox.warning(self, "Validation", err)
+            QMessageBox.warning(self, tr("error"), err)
             return
         if not self.first_name.text().strip() or not self.last_name.text().strip():
-            QMessageBox.warning(self, "Validation", "First name and last name are required.")
+            if tr("language") == "Language":  # English
+                QMessageBox.warning(self, tr("error"), "First name and last name are required.")
+            else:  # Serbian
+                QMessageBox.warning(self, tr("error"), "Име и презиме су обавезни.")
             return
         self.accept()
 
@@ -165,20 +196,21 @@ class AddEmployeeDialog(QDialog):
 class ScheduleVacationDialog(QDialog):
     def __init__(self, parent=None, employee_name: str = ""):
         super().__init__(parent)
-        self.setWindowTitle("Schedule vacation / day off" + (f" – {employee_name}" if employee_name else ""))
+        title = tr("schedule_vacation_for") + (f" {employee_name}" if employee_name else "")
+        self.setWindowTitle(title)
         lay = QFormLayout(self)
         self.booking_date = QDateEdit()
         self.booking_date.setDate(QDate.currentDate())
         self.booking_date.setCalendarPopup(True)
-        lay.addRow("Booking date:", self.booking_date)
+        lay.addRow(tr("booking_date") + ":", self.booking_date)
         self.start_date = QDateEdit()
         self.start_date.setDate(QDate.currentDate())
         self.start_date.setCalendarPopup(True)
-        lay.addRow("Start date:", self.start_date)
+        lay.addRow(tr("start") + ":", self.start_date)
         self.end_date = QDateEdit()
         self.end_date.setDate(QDate.currentDate())
         self.end_date.setCalendarPopup(True)
-        lay.addRow("End date:", self.end_date)
+        lay.addRow(tr("end") + ":", self.end_date)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -198,21 +230,24 @@ class ScheduleVacationDialog(QDialog):
 class AddEarnedDaysDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add earned vacation days")
+        self.setWindowTitle(tr("add_earned_days_title"))
         lay = QFormLayout(self)
         self.earned_date = QDateEdit()
         self.earned_date.setDate(QDate.currentDate())
         self.earned_date.setCalendarPopup(True)
-        lay.addRow("Date earned:", self.earned_date)
+        lay.addRow(tr("date_earned") + ":", self.earned_date)
         self.number_of_days = QSpinBox()
         self.number_of_days.setMinimum(1)
         self.number_of_days.setMaximum(365)
         self.number_of_days.setValue(1)
-        lay.addRow("Number of days:", self.number_of_days)
+        lay.addRow(tr("number_of_days") + ":", self.number_of_days)
         self.reason_notes = QPlainTextEdit()
-        self.reason_notes.setPlaceholderText("e.g. blood donation, overtime, stepping in, public holiday…")
+        if tr("language") == "Language":  # English
+            self.reason_notes.setPlaceholderText("e.g. blood donation, overtime, stepping in, public holiday…")
+        else:  # Serbian
+            self.reason_notes.setPlaceholderText("нпр. давање крви, прековремени рад, замена, државни празник…")
         self.reason_notes.setMaximumHeight(80)
-        lay.addRow("Reason / notes:", self.reason_notes)
+        lay.addRow(tr("reason_notes") + ":", self.reason_notes)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -239,19 +274,22 @@ class ContractDialog(QDialog):
         current_religion: str = "orthodox",
     ):
         super().__init__(parent)
-        self.setWindowTitle("Contract date / type")
+        self.setWindowTitle(tr("edit_contract"))
         lay = QFormLayout(self)
         self.religion = QComboBox()
-        self.religion.addItems(["Orthodox", "Catholic"])
+        self.religion.addItems([tr("orthodox"), tr("catholic")])
         rel_idx = 0 if current_religion == "orthodox" else 1
         self.religion.setCurrentIndex(rel_idx)
-        lay.addRow("Religion:", self.religion)
+        lay.addRow(tr("religion") + ":", self.religion)
         self.contract_type = QComboBox()
-        self.contract_type.addItems(["Fixed term (with end date)", "Open-ended (no end date)"])
+        if tr("language") == "Language":  # English
+            self.contract_type.addItems(["Fixed term (with end date)", "Open-ended (no end date)"])
+        else:  # Serbian
+            self.contract_type.addItems(["Одређено (са датумом истека)", "Неодређено (без датума истека)"])
         idx = 0 if current_type == "fixed_term" else 1
         self.contract_type.setCurrentIndex(idx)
         self.contract_type.currentIndexChanged.connect(self._on_type_changed)
-        lay.addRow("Contract type:", self.contract_type)
+        lay.addRow(tr("contract_type") + ":", self.contract_type)
         self.contract_end_date = QDateEdit()
         self.contract_end_date.setCalendarPopup(True)
         if current_end_date:
@@ -262,12 +300,15 @@ class ContractDialog(QDialog):
                 self.contract_end_date.setDate(QDate.currentDate().addYears(1))
         else:
             self.contract_end_date.setDate(QDate.currentDate().addYears(1))
-        lay.addRow("Contract end date:", self.contract_end_date)
+        lay.addRow(tr("contract_end_date") + ":", self.contract_end_date)
         self.days_at_start = QSpinBox()
         self.days_at_start.setMinimum(0)
         self.days_at_start.setMaximum(365)
         self.days_at_start.setValue(current_days_at_start)
-        lay.addRow("Days at start (this year):", self.days_at_start)
+        if tr("language") == "Language":  # English
+            lay.addRow("Days at start (this year):", self.days_at_start)
+        else:  # Serbian
+            lay.addRow("Дани на почетку (ова година):", self.days_at_start)
         self._on_type_changed(idx)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
@@ -298,13 +339,19 @@ class SetTransferredDaysDialog(QDialog):
         super().__init__(parent)
         from datetime import date
         self._year = year or date.today().year
-        self.setWindowTitle(f"Set transferred days (from previous year) – {self._year}")
+        if tr("language") == "Language":  # English
+            self.setWindowTitle(f"Set transferred days (from previous year) – {self._year}")
+        else:  # Serbian
+            self.setWindowTitle(f"Постави пренете дане (из претходне године) – {self._year}")
         lay = QFormLayout(self)
         self.days = QSpinBox()
         self.days.setMinimum(0)
         self.days.setMaximum(365)
         self.days.setValue(current_days)
-        lay.addRow("Days transferred:", self.days)
+        if tr("language") == "Language":  # English
+            lay.addRow("Days transferred:", self.days)
+        else:  # Serbian
+            lay.addRow("Пренети дани:", self.days)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -325,14 +372,17 @@ class ManageNonWorkingDaysDialog(QDialog):
         self._conn = conn
         self._holidays = []
         
-        self.setWindowTitle("Manage Non-Working Days")
+        self.setWindowTitle(tr("manage_holidays"))
         self.resize(900, 600)
         
         layout = QVBoxLayout(self)
         
         # Year selection and fetch button
         top_layout = QHBoxLayout()
-        top_layout.addWidget(QLabel("Year:"))
+        if tr("language") == "Language":  # English
+            top_layout.addWidget(QLabel("Year:"))
+        else:  # Serbian
+            top_layout.addWidget(QLabel("Година:"))
         
         self.year_combo = QComboBox()
         current_year = date.today().year
@@ -342,7 +392,11 @@ class ManageNonWorkingDaysDialog(QDialog):
         self.year_combo.currentTextChanged.connect(self._on_year_changed)
         top_layout.addWidget(self.year_combo)
         
-        self.fetch_btn = QPushButton("Fetch from Ministry Website")
+        if tr("language") == "Language":  # English
+            fetch_text = "Fetch from Ministry Website"
+        else:  # Serbian
+            fetch_text = "Преузми са сајта министарства"
+        self.fetch_btn = QPushButton(fetch_text)
         self.fetch_btn.clicked.connect(self._fetch_holidays)
         top_layout.addWidget(self.fetch_btn)
         

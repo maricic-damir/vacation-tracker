@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPalette
 
 from ui.dialogs import AddEmployeeDialog, ScheduleVacationDialog
+from translations import tr
 
 
 class EmployeeListScreen(QWidget):
@@ -26,9 +27,7 @@ class EmployeeListScreen(QWidget):
         lay = QVBoxLayout(self)
         self._table = QTableWidget()
         self._table.setColumnCount(5)
-        self._table.setHorizontalHeaderLabels(
-            ["JMBG", "First name", "Last name", "Contract type", "Vacation days left"]
-        )
+        self._update_table_headers()
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -42,25 +41,43 @@ class EmployeeListScreen(QWidget):
         lay.addWidget(self._selection_label)
 
         btn_lay = QHBoxLayout()
-        btn_add = QPushButton("Add employee")
-        btn_add.clicked.connect(self._add_employee)
-        btn_lay.addWidget(btn_add)
-        btn_schedule = QPushButton("Schedule vacation / day off")
-        btn_schedule.clicked.connect(self._schedule_vacation_from_list)
-        btn_lay.addWidget(btn_schedule)
-        btn_all_schedules = QPushButton("All scheduled / used days")
-        btn_all_schedules.clicked.connect(self._go_to_all_schedules)
-        btn_lay.addWidget(btn_all_schedules)
-        self._btn_rollover = QPushButton("Roll over to [Year]")
+        self._btn_add = QPushButton()
+        self._btn_add.clicked.connect(self._add_employee)
+        btn_lay.addWidget(self._btn_add)
+        self._btn_schedule = QPushButton()
+        self._btn_schedule.clicked.connect(self._schedule_vacation_from_list)
+        btn_lay.addWidget(self._btn_schedule)
+        self._btn_all_schedules = QPushButton()
+        self._btn_all_schedules.clicked.connect(self._go_to_all_schedules)
+        btn_lay.addWidget(self._btn_all_schedules)
+        self._btn_rollover = QPushButton()
         self._btn_rollover.clicked.connect(self._rollover_year)
         btn_lay.addWidget(self._btn_rollover)
-        self._btn_holidays = QPushButton("Manage Non-Working Days")
+        self._btn_holidays = QPushButton()
         self._btn_holidays.clicked.connect(self._manage_holidays)
         btn_lay.addWidget(self._btn_holidays)
         btn_lay.addStretch()
         lay.addLayout(btn_lay)
         self._go_to_all_schedules_callback = None
+        self._update_button_text()
         self._update_selection_hint()
+    
+    def _update_table_headers(self):
+        """Update table headers with translated text."""
+        self._table.setHorizontalHeaderLabels([
+            tr("jmbg"),
+            tr("first_name"),
+            tr("last_name"),
+            tr("contract"),
+            tr("days_left")
+        ])
+    
+    def _update_button_text(self):
+        """Update button text with translations."""
+        self._btn_add.setText(tr("add_employee"))
+        self._btn_schedule.setText(tr("schedule_vacation"))
+        self._btn_all_schedules.setText(tr("all_schedules"))
+        self._btn_holidays.setText(tr("holidays_settings"))
 
     def set_go_to_all_schedules(self, callback):
         self._go_to_all_schedules_callback = callback
@@ -78,9 +95,14 @@ class EmployeeListScreen(QWidget):
         sel = self._table.selectionModel().selectedRows()
         if not sel:
             self._selection_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
-            self._selection_label.setText(
-                'No employee selected. Click a row in the table, then use "Schedule vacation / day off".'
-            )
+            if tr("language") == "Language":  # English
+                self._selection_label.setText(
+                    'No employee selected. Click a row in the table, then use "Schedule vacation / day off".'
+                )
+            else:  # Serbian
+                self._selection_label.setText(
+                    'Запослени није изабран. Кликните ред у табели, затим користите "Закажи годишњи / одсуство".'
+                )
             return
         row = sel[0].row()
         jmbg_item = self._table.item(row, 0)
@@ -89,9 +111,14 @@ class EmployeeListScreen(QWidget):
         if not jmbg_item or not first_item or not last_item:
             return
         self._selection_label.setForegroundRole(QPalette.ColorRole.WindowText)
-        self._selection_label.setText(
-            f"Scheduling will use: {first_item.text()} {last_item.text()} (JMBG {jmbg_item.text()})"
-        )
+        if tr("language") == "Language":  # English
+            self._selection_label.setText(
+                f"Scheduling will use: {first_item.text()} {last_item.text()} (JMBG {jmbg_item.text()})"
+            )
+        else:  # Serbian
+            self._selection_label.setText(
+                f"Закаживање ће користити: {first_item.text()} {last_item.text()} (ЈМБГ {jmbg_item.text()})"
+            )
 
     def refresh(self):
         conn = self._conn()
@@ -100,6 +127,10 @@ class EmployeeListScreen(QWidget):
         from datetime import date
         from db_helpers import list_employees
         from database import is_rollover_complete
+
+        # Update UI text
+        self._update_table_headers()
+        self._update_button_text()
 
         prev_eid = None
         for idx in self._table.selectionModel().selectedRows():
@@ -114,9 +145,9 @@ class EmployeeListScreen(QWidget):
             self._table.setItem(i, 0, self._cell(r.get("jmbg", ""), r.get("id")))
             self._table.setItem(i, 1, self._cell(r.get("first_name", "")))
             self._table.setItem(i, 2, self._cell(r.get("last_name", "")))
-            ct = "Fixed term" if r.get("contract_type") == "fixed_term" else "Open-ended"
+            ct = tr("fixed_term") if r.get("contract_type") == "fixed_term" else tr("open_ended")
             if r.get("contract_end_date"):
-                ct += f" (until {r['contract_end_date']})"
+                ct += f" ({tr('until')} {r['contract_end_date']})"
             self._table.setItem(i, 3, self._cell(ct))
             self._table.setItem(i, 4, self._cell(str(r.get("total_vacation_left", 0))))
         if prev_eid is not None:
@@ -129,7 +160,10 @@ class EmployeeListScreen(QWidget):
         
         current_year = date.today().year
         rollover_done = is_rollover_complete(conn, current_year)
-        self._btn_rollover.setText(f"Roll over to {current_year}")
+        if tr("language") == "Language":  # English
+            self._btn_rollover.setText(f"Roll over to {current_year}")
+        else:  # Serbian
+            self._btn_rollover.setText(f"Пренос на {current_year}")
         self._btn_rollover.setEnabled(not rollover_done)
 
     def _cell(self, text: str, user_data=None):
@@ -158,19 +192,27 @@ class EmployeeListScreen(QWidget):
             ensure_year_balance(conn, eid, year, data["contract_type"])
             set_days_at_start(conn, eid, year, data["days_at_start"])
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("error"), str(e))
             return
         self._refresh()
 
     def _schedule_vacation_from_list(self):
         sel = self._table.selectionModel().selectedRows()
         if not sel:
-            QMessageBox.information(
-                self,
-                "Select employee",
-                "Click a row in the employee table to choose who to schedule, then try again. "
-                "You can also open an employee with double-click and schedule from their detail page.",
-            )
+            if tr("language") == "Language":  # English
+                QMessageBox.information(
+                    self,
+                    "Select employee",
+                    "Click a row in the employee table to choose who to schedule, then try again. "
+                    "You can also open an employee with double-click and schedule from their detail page.",
+                )
+            else:  # Serbian
+                QMessageBox.information(
+                    self,
+                    "Изаберите запосленог",
+                    "Кликните ред у табели запослених да бисте изабрали за кога да закажете, затим покушајте поново. "
+                    "Такође можете отворити запосленог двокликом и заказати са њихове странице детаља.",
+                )
             return
         row = sel[0].row()
         id_item = self._table.item(row, 0)
@@ -202,7 +244,7 @@ class EmployeeListScreen(QWidget):
         start = date.fromisoformat(data["start_date"])
         end = date.fromisoformat(data["end_date"])
         if start > end:
-            QMessageBox.warning(self, "Invalid dates", "Start date must be before or equal to end date.")
+            QMessageBox.warning(self, tr("invalid_dates"), tr("start_before_end"))
             return
         is_past = start < date.today()
         if is_past and not warn_past_start_date(self, start):
@@ -238,7 +280,7 @@ class EmployeeListScreen(QWidget):
             )
             run_completion_job(conn)
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("error"), str(e))
             return
         self._refresh()
 
@@ -253,32 +295,53 @@ class EmployeeListScreen(QWidget):
         current_year = date.today().year
         previous_year = current_year - 1
         
-        reply = QMessageBox.question(
-            self,
-            "Confirm Year Rollover",
-            f"Roll over all active employees from {previous_year} to {current_year}?\n\n"
-            f"This will:\n"
-            f"- Transfer all unused days from {previous_year} to {current_year}\n"
-            f"- Calculate new days at start for {current_year} based on contract end dates\n"
-            f"- Process all active employees\n\n"
-            f"This action cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
+        if tr("language") == "Language":  # English
+            reply = QMessageBox.question(
+                self,
+                "Confirm Year Rollover",
+                f"Roll over all active employees from {previous_year} to {current_year}?\n\n"
+                f"This will:\n"
+                f"- Transfer all unused days from {previous_year} to {current_year}\n"
+                f"- Calculate new days at start for {current_year} based on contract end dates\n"
+                f"- Process all active employees\n\n"
+                f"This action cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        else:  # Serbian
+            reply = QMessageBox.question(
+                self,
+                "Потврдите пренос године",
+                f"Пренети све активне запослене са {previous_year} на {current_year}?\n\n"
+                f"Ово ће:\n"
+                f"- Пренети све неискоришћене дане са {previous_year} на {current_year}\n"
+                f"- Израчунати нове дане на почетку за {current_year} на основу датума истека уговора\n"
+                f"- Обрадити све активне запослене\n\n"
+                f"Ова акција се не може поништити.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
         
         if reply != QMessageBox.StandardButton.Yes:
             return
         
         try:
             count = rollover_all_employees(conn, previous_year, current_year)
-            QMessageBox.information(
-                self,
-                "Rollover Complete",
-                f"Successfully rolled over {count} employee(s) to {current_year}."
-            )
+            if tr("language") == "Language":  # English
+                QMessageBox.information(
+                    self,
+                    "Rollover Complete",
+                    f"Successfully rolled over {count} employee(s) to {current_year}."
+                )
+            else:  # Serbian
+                QMessageBox.information(
+                    self,
+                    "Пренос завршен",
+                    f"Успешно пренето {count} запослени(х) на {current_year}."
+                )
             self._refresh()
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("error"), str(e))
             return
     
     def _manage_holidays(self):

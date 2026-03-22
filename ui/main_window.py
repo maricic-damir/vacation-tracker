@@ -9,26 +9,59 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QStackedWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QWidget,
+    QComboBox,
+    QLabel,
 )
+from PyQt6.QtCore import Qt
 from database import get_connection, resolve_db_path, run_completion_job
 from ui.dialogs import choose_or_create_db_path, locate_db_path
 from ui.screen_employees import EmployeeListScreen
 from ui.screen_employee_detail import EmployeeDetailScreen
 from ui.screen_all_schedules import AllSchedulesScreen
+from translations import tr, set_language as set_app_language, get_language
+import config
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Vacation tracker")
         self._db_path: Optional[str] = None
         self._conn: Optional[sqlite3.Connection] = None
+        
+        # Load saved language
+        saved_lang = config.get_language()
+        set_app_language(saved_lang)
+        
+        self.setWindowTitle(tr("app_title"))
 
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.setContentsMargins(8, 8, 8, 8)
+        
+        # Top bar with language selector
+        top_bar = QHBoxLayout()
+        top_bar.addStretch()
+        
+        lang_label = QLabel(tr("language") + ":")
+        top_bar.addWidget(lang_label)
+        
+        self._lang_combo = QComboBox()
+        self._lang_combo.addItem("English", "en")
+        self._lang_combo.addItem("Српски", "sr")
+        
+        # Set current language
+        idx = self._lang_combo.findData(saved_lang)
+        if idx >= 0:
+            self._lang_combo.setCurrentIndex(idx)
+        
+        self._lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        top_bar.addWidget(self._lang_combo)
+        
+        layout.addLayout(top_bar)
+        
         self._stack = QStackedWidget()
         layout.addWidget(self._stack)
 
@@ -59,6 +92,22 @@ class MainWindow(QMainWindow):
 
     def _get_conn(self) -> Optional[sqlite3.Connection]:
         return self._conn
+    
+    def _on_language_changed(self):
+        """Handle language change."""
+        lang_code = self._lang_combo.currentData()
+        if lang_code:
+            set_app_language(lang_code)
+            config.set_language(lang_code)
+            self._refresh_ui()
+    
+    def _refresh_ui(self):
+        """Refresh all UI text after language change."""
+        self.setWindowTitle(tr("app_title"))
+        # Refresh all screens
+        self._list_screen.refresh()
+        self._detail_screen.refresh()
+        self._all_schedules_screen.refresh()
 
     def _refresh_current(self):
         idx = self._stack.currentIndex()
@@ -93,8 +142,8 @@ class MainWindow(QMainWindow):
         if not path:
             QMessageBox.information(
                 self,
-                "Database required",
-                "No database was selected. The application will close.",
+                tr("database_required"),
+                tr("no_database_selected"),
             )
             return False
         self._db_path = path
