@@ -88,6 +88,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     migrate_add_deduction_tracking(conn)
     migrate_add_non_working_days(conn)
     migrate_add_religion(conn)
+    migrate_add_start_contract_date(conn)
     conn.commit()
 
 
@@ -360,6 +361,16 @@ def migrate_add_religion(conn: sqlite3.Connection) -> None:
         conn.commit()
         # Recalculate all vacation records with new religion-based filtering
         recalculate_all_vacation_records_with_working_days(conn)
+
+
+def migrate_add_start_contract_date(conn: sqlite3.Connection) -> None:
+    """Add start_contract_date column to employees table if it doesn't exist."""
+    cur = conn.execute("PRAGMA table_info(employees)")
+    columns = {row[1] for row in cur.fetchall()}
+    
+    if "start_contract_date" not in columns:
+        conn.execute("ALTER TABLE employees ADD COLUMN start_contract_date DATE NULL")
+        conn.commit()
 
 
 def recalculate_all_vacation_records_with_working_days(conn: sqlite3.Connection) -> None:

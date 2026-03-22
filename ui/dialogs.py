@@ -103,6 +103,11 @@ class AddEmployeeDialog(QDialog):
         self.religion = QComboBox()
         self.religion.addItems([tr("orthodox"), tr("catholic")])
         lay.addRow(tr("religion") + ":", self.religion)
+        self.start_contract_date = QDateEdit()
+        self.start_contract_date.setCalendarPopup(True)
+        self.start_contract_date.setDate(QDate.currentDate())
+        self.start_contract_date.dateChanged.connect(lambda _d: self._update_prorated_label())
+        lay.addRow(tr("start_contract_date") + ":", self.start_contract_date)
         self.contract_type = QComboBox()
         if tr("language") == "Language":  # English
             self.contract_type.addItems(["Fixed term (with end date)", "Open-ended (no end date)"])
@@ -137,16 +142,17 @@ class AddEmployeeDialog(QDialog):
         end_str = (
             self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None
         )
-        n = prorated_vacation_entitlement_for_year(date.today(), end_str)
+        start_date = self.start_contract_date.date().toPyDate()
+        n = prorated_vacation_entitlement_for_year(start_date, end_str)
         if tr("language") == "Language":  # English
             self._prorated_label.setText(
                 str(n)
-                + " (based on today's date, contract type, and end of employment within this year)"
+                + " (based on start contract date, contract type, and end of employment within this year)"
             )
         else:  # Serbian
             self._prorated_label.setText(
                 str(n)
-                + " (на основу данашњег датума, типа уговора и краја запослења у овој години)"
+                + " (на основу датума почетка уговора, типа уговора и краја запослења у овој години)"
             )
 
     def _validate_jmbg(self) -> Optional[str]:
@@ -176,7 +182,8 @@ class AddEmployeeDialog(QDialog):
         idx = self.contract_type.currentIndex()
         contract_type = "fixed_term" if idx == 0 else "open_ended"
         end_date = self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None
-        days_at_start = prorated_vacation_entitlement_for_year(date.today(), end_date)
+        start_date = self.start_contract_date.date().toPyDate()
+        days_at_start = prorated_vacation_entitlement_for_year(start_date, end_date)
         religion_idx = self.religion.currentIndex()
         religion = "orthodox" if religion_idx == 0 else "catholic"
         return {
@@ -186,6 +193,7 @@ class AddEmployeeDialog(QDialog):
             "religion": religion,
             "contract_type": contract_type,
             "contract_end_date": end_date,
+            "start_contract_date": self.start_contract_date.date().toString("yyyy-MM-dd"),
             "days_at_start": days_at_start,
         }
 

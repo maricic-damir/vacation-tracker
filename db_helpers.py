@@ -19,7 +19,7 @@ def list_employees(conn: sqlite3.Connection) -> list[dict]:
     """All employees with computed total vacation days left (current year)."""
     from database import ensure_year_balance
     cur = conn.execute("""
-        SELECT id, jmbg, first_name, last_name, contract_type, contract_end_date, is_active, created_at, updated_at
+        SELECT id, jmbg, first_name, last_name, contract_type, contract_end_date, start_contract_date, is_active, created_at, updated_at
         FROM employees
         ORDER BY last_name, first_name
     """)
@@ -28,13 +28,14 @@ def list_employees(conn: sqlite3.Connection) -> list[dict]:
     for r in rows:
         ensure_year_balance(conn, r["id"], year, r["contract_type"])
         r["contract_end_date"] = r["contract_end_date"] or ""
+        r["start_contract_date"] = r.get("start_contract_date") or ""
         r["total_vacation_left"] = total_vacation_left(conn, r["id"], year)
     return rows
 
 
 def get_employee(conn: sqlite3.Connection, employee_id: int) -> Optional[dict]:
     cur = conn.execute(
-        "SELECT id, jmbg, first_name, last_name, contract_type, contract_end_date, is_active, created_at, updated_at FROM employees WHERE id = ?",
+        "SELECT id, jmbg, first_name, last_name, contract_type, contract_end_date, start_contract_date, is_active, created_at, updated_at FROM employees WHERE id = ?",
         (employee_id,),
     )
     row = cur.fetchone()
@@ -42,6 +43,7 @@ def get_employee(conn: sqlite3.Connection, employee_id: int) -> Optional[dict]:
         return None
     d = _row_dict(row)
     d["contract_end_date"] = d["contract_end_date"] or ""
+    d["start_contract_date"] = d.get("start_contract_date") or ""
     return d
 
 
@@ -53,11 +55,12 @@ def insert_employee(
     contract_type: str,
     contract_end_date: Optional[str],
     religion: str = 'orthodox',
+    start_contract_date: Optional[str] = None,
 ) -> int:
     cur = conn.execute(
-        """INSERT INTO employees (jmbg, first_name, last_name, contract_type, contract_end_date, religion, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, 1)""",
-        (jmbg.strip(), first_name.strip(), last_name.strip(), contract_type, contract_end_date or None, religion),
+        """INSERT INTO employees (jmbg, first_name, last_name, contract_type, contract_end_date, religion, start_contract_date, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+        (jmbg.strip(), first_name.strip(), last_name.strip(), contract_type, contract_end_date or None, religion, start_contract_date or None),
     )
     eid = cur.lastrowid
     conn.execute("UPDATE employees SET updated_at = datetime('now') WHERE id = ?", (eid,))

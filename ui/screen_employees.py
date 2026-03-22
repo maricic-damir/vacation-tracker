@@ -188,6 +188,7 @@ class EmployeeListScreen(QWidget):
             eid = insert_employee(
                 conn, data["jmbg"], data["first_name"], data["last_name"],
                 data["contract_type"], data["contract_end_date"], data["religion"],
+                data["start_contract_date"],
             )
             ensure_year_balance(conn, eid, year, data["contract_type"])
             set_days_at_start(conn, eid, year, data["days_at_start"])
