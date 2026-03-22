@@ -26,13 +26,28 @@ class EmployeeListScreen(QWidget):
         self._refresh = refresh_callback
         lay = QVBoxLayout(self)
         self._table = QTableWidget()
-        self._table.setColumnCount(5)
+        self._table.setColumnCount(6)
         self._update_table_headers()
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.cellDoubleClicked.connect(self._on_double_click)
+        
+        # Enable word wrap for cells
+        self._table.setWordWrap(True)
+        
+        # Auto-resize rows to fit content
+        self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        
+        # Add cell padding for better readability
+        self._table.setStyleSheet("""
+            QTableWidget::item {
+                padding: 8px;
+            }
+        """)
+        
         lay.addWidget(self._table)
 
         self._selection_label = QLabel()
@@ -68,7 +83,8 @@ class EmployeeListScreen(QWidget):
             tr("jmbg"),
             tr("first_name"),
             tr("last_name"),
-            tr("contract"),
+            tr("contract_start_date"),
+            tr("contract_end_date"),
             tr("days_left")
         ])
     
@@ -81,6 +97,15 @@ class EmployeeListScreen(QWidget):
 
     def set_go_to_all_schedules(self, callback):
         self._go_to_all_schedules_callback = callback
+    
+    def get_optimal_table_width(self):
+        """Calculate the optimal width needed to display all columns without wrapping."""
+        total_width = 0
+        for i in range(self._table.columnCount()):
+            total_width += self._table.columnWidth(i)
+        # Add vertical header width and some padding
+        total_width += self._table.verticalHeader().width() + 40
+        return total_width
 
     def _go_to_all_schedules(self):
         if self._go_to_all_schedules_callback:
@@ -145,17 +170,27 @@ class EmployeeListScreen(QWidget):
             self._table.setItem(i, 0, self._cell(r.get("jmbg", ""), r.get("id")))
             self._table.setItem(i, 1, self._cell(r.get("first_name", "")))
             self._table.setItem(i, 2, self._cell(r.get("last_name", "")))
+            
+            # Contract start date
+            start_date = r.get("start_contract_date", "")
+            self._table.setItem(i, 3, self._cell(start_date if start_date else "-"))
+            
+            # Contract end date with type
             ct = tr("fixed_term") if r.get("contract_type") == "fixed_term" else tr("open_ended")
             if r.get("contract_end_date"):
                 ct += f" ({tr('until')} {r['contract_end_date']})"
-            self._table.setItem(i, 3, self._cell(ct))
-            self._table.setItem(i, 4, self._cell(str(r.get("total_vacation_left", 0))))
+            self._table.setItem(i, 4, self._cell(ct))
+            
+            self._table.setItem(i, 5, self._cell(str(r.get("total_vacation_left", 0))))
         if prev_eid is not None:
             for i, r in enumerate(rows):
                 if r.get("id") == prev_eid:
                     self._table.selectRow(i)
                     break
-        self._table.resizeRowsToContents()
+        
+        # Resize columns to fit content, then stretch to fill available width
+        self._table.resizeColumnsToContents()
+        
         self._update_selection_hint()
         
         current_year = date.today().year

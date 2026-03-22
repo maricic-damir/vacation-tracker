@@ -13,8 +13,9 @@ from PyQt6.QtWidgets import (
     QWidget,
     QComboBox,
     QLabel,
+    QApplication,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from database import get_connection, resolve_db_path, run_completion_job
 from ui.dialogs import choose_or_create_db_path, locate_db_path
 from ui.screen_employees import EmployeeListScreen
@@ -41,12 +42,15 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(8, 8, 8, 8)
         
-        # Top bar with language selector
-        top_bar = QHBoxLayout()
-        top_bar.addStretch()
+        self._stack = QStackedWidget()
+        layout.addWidget(self._stack)
         
-        lang_label = QLabel(tr("language") + ":")
-        top_bar.addWidget(lang_label)
+        # Bottom bar with language selector
+        bottom_bar = QHBoxLayout()
+        bottom_bar.addStretch()
+        
+        self._lang_label = QLabel(tr("language") + ":")
+        bottom_bar.addWidget(self._lang_label)
         
         self._lang_combo = QComboBox()
         self._lang_combo.addItem("English", "en")
@@ -58,12 +62,9 @@ class MainWindow(QMainWindow):
             self._lang_combo.setCurrentIndex(idx)
         
         self._lang_combo.currentIndexChanged.connect(self._on_language_changed)
-        top_bar.addWidget(self._lang_combo)
+        bottom_bar.addWidget(self._lang_combo)
         
-        layout.addLayout(top_bar)
-        
-        self._stack = QStackedWidget()
-        layout.addWidget(self._stack)
+        layout.addLayout(bottom_bar)
 
         # Screens
         self._list_screen = EmployeeListScreen(
@@ -104,6 +105,7 @@ class MainWindow(QMainWindow):
     def _refresh_ui(self):
         """Refresh all UI text after language change."""
         self.setWindowTitle(tr("app_title"))
+        self._lang_label.setText(tr("language") + ":")
         # Refresh all screens
         self._list_screen.refresh()
         self._detail_screen.refresh()
@@ -150,7 +152,37 @@ class MainWindow(QMainWindow):
         self._conn = get_connection(path)
         run_completion_job(self._conn)
         self._list_screen.refresh()
+        
+        # Adjust window size after table is populated
+        QTimer.singleShot(100, self._adjust_window_size)
+        
         return True
+    
+    def _adjust_window_size(self):
+        """Adjust window size to fit table content while respecting screen bounds."""
+        # Get the optimal width for the table
+        optimal_width = self._list_screen.get_optimal_table_width()
+        
+        # Add extra width for margins and padding
+        optimal_width += 50
+        
+        # Get screen geometry
+        screen = QApplication.primaryScreen().availableGeometry()
+        max_width = screen.width()
+        max_height = screen.height()
+        
+        # Calculate desired dimensions
+        desired_width = min(optimal_width, max_width)
+        desired_height = min(700, max_height)
+        
+        # Resize window
+        self.resize(desired_width, desired_height)
+        
+        # Center window on screen
+        self.move(
+            (screen.width() - self.width()) // 2,
+            (screen.height() - self.height()) // 2
+        )
 
     def closeEvent(self, event):
         if self._conn:
