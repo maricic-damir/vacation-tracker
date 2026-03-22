@@ -3,6 +3,8 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
+    QLineEdit,
     QPushButton,
     QSizePolicy,
     QTableWidget,
@@ -24,7 +26,32 @@ class AllSchedulesScreen(QWidget):
         self._on_back = on_back
         self._sorting_enabled = False
         self._sort_order = {}
+        self._all_rows = []
+        
         lay = QVBoxLayout(self)
+        
+        # Add filter section
+        filter_layout = QHBoxLayout()
+        
+        # JMBG filter
+        self._jmbg_filter_label = QLabel()
+        self._jmbg_filter = QLineEdit()
+        self._jmbg_filter.setPlaceholderText("Filter...")
+        self._jmbg_filter.textChanged.connect(self._apply_filters)
+        filter_layout.addWidget(self._jmbg_filter_label)
+        filter_layout.addWidget(self._jmbg_filter)
+        
+        # First Name filter
+        self._first_name_filter_label = QLabel()
+        self._first_name_filter = QLineEdit()
+        self._first_name_filter.setPlaceholderText("Filter...")
+        self._first_name_filter.textChanged.connect(self._apply_filters)
+        filter_layout.addWidget(self._first_name_filter_label)
+        filter_layout.addWidget(self._first_name_filter)
+        
+        filter_layout.addStretch()
+        lay.addLayout(filter_layout)
+        
         self._table = QTableWidget()
         self._table.setColumnCount(6)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -52,26 +79,20 @@ class AllSchedulesScreen(QWidget):
             return
         from db_helpers import list_vacation_records_all
         
-        # Temporarily disable sorting while populating the table
-        self._table.setSortingEnabled(False)
-        
         # Update UI text
         self._btn_back.setText(tr("back_to_list"))
+        self._jmbg_filter_label.setText(tr("jmbg") + ":")
+        self._first_name_filter_label.setText(tr("first_name") + ":")
         self._table.setHorizontalHeaderLabels([
             tr("jmbg"), tr("first_name"), tr("last_name"),
             tr("booking_date"), tr("start"), tr("end")
         ])
         
-        rows = list_vacation_records_all(conn)
-        self._table.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            for col, key in enumerate(
-                ("jmbg", "first_name", "last_name", "booking_date", "start_date", "end_date")
-            ):
-                it = QTableWidgetItem(str(r.get(key, "")))
-                it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self._table.setItem(i, col, it)
-        self._table.resizeRowsToContents()
+        # Store all rows for filtering
+        self._all_rows = list_vacation_records_all(conn)
+        
+        # Apply filters and populate table
+        self._apply_filters()
         
         # Set up custom header click handling
         header = self._table.horizontalHeader()
@@ -83,6 +104,34 @@ class AllSchedulesScreen(QWidget):
                 pass
         header.sectionClicked.connect(self._on_header_clicked)
         self._sorting_enabled = True
+    
+    def _apply_filters(self):
+        # Get filter values
+        jmbg_filter = self._jmbg_filter.text().lower()
+        first_name_filter = self._first_name_filter.text().lower()
+        
+        # Filter rows
+        filtered_rows = []
+        for r in self._all_rows:
+            jmbg_match = jmbg_filter in str(r.get("jmbg", "")).lower()
+            first_name_match = first_name_filter in str(r.get("first_name", "")).lower()
+            
+            if jmbg_match and first_name_match:
+                filtered_rows.append(r)
+        
+        # Temporarily disable sorting while populating the table
+        self._table.setSortingEnabled(False)
+        
+        # Populate table with filtered rows
+        self._table.setRowCount(len(filtered_rows))
+        for i, r in enumerate(filtered_rows):
+            for col, key in enumerate(
+                ("jmbg", "first_name", "last_name", "booking_date", "start_date", "end_date")
+            ):
+                it = QTableWidgetItem(str(r.get(key, "")))
+                it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self._table.setItem(i, col, it)
+        self._table.resizeRowsToContents()
     
     def _on_header_clicked(self, logical_index):
         # Only allow sorting on columns 0 (JMBG), 1 (first name), 2 (last name), 4 (start date)
