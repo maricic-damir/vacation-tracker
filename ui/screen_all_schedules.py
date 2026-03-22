@@ -22,11 +22,14 @@ class AllSchedulesScreen(QWidget):
         self._conn = conn_getter
         self._refresh = refresh_callback
         self._on_back = on_back
+        self._sorting_enabled = False
+        self._sort_order = {}
         lay = QVBoxLayout(self)
         self._table = QTableWidget()
         self._table.setColumnCount(6)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setSortingEnabled(False)
         lay.addWidget(self._table)
         self._btn_back = QPushButton()
         self._btn_back.clicked.connect(lambda: on_back() if on_back else None)
@@ -49,6 +52,9 @@ class AllSchedulesScreen(QWidget):
             return
         from db_helpers import list_vacation_records_all
         
+        # Temporarily disable sorting while populating the table
+        self._table.setSortingEnabled(False)
+        
         # Update UI text
         self._btn_back.setText(tr("back_to_list"))
         self._table.setHorizontalHeaderLabels([
@@ -66,3 +72,27 @@ class AllSchedulesScreen(QWidget):
                 it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(i, col, it)
         self._table.resizeRowsToContents()
+        
+        # Set up custom header click handling
+        header = self._table.horizontalHeader()
+        header.setSectionsClickable(True)
+        if self._sorting_enabled:
+            try:
+                header.sectionClicked.disconnect()
+            except:
+                pass
+        header.sectionClicked.connect(self._on_header_clicked)
+        self._sorting_enabled = True
+    
+    def _on_header_clicked(self, logical_index):
+        # Only allow sorting on columns 0 (JMBG), 1 (first name), 2 (last name), 4 (start date)
+        if logical_index not in (3, 5):
+            # Toggle sort order for this column
+            current_order = self._sort_order.get(logical_index, Qt.SortOrder.DescendingOrder)
+            new_order = Qt.SortOrder.AscendingOrder if current_order == Qt.SortOrder.DescendingOrder else Qt.SortOrder.DescendingOrder
+            self._sort_order[logical_index] = new_order
+            
+            # Perform the sort
+            self._table.setSortingEnabled(True)
+            self._table.sortItems(logical_index, new_order)
+            self._table.setSortingEnabled(False)
