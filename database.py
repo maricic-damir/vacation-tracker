@@ -214,14 +214,14 @@ def resolve_db_path(choose_or_create_callback, locate_callback) -> Optional[str]
 
 
 def ensure_year_balance(conn: sqlite3.Connection, employee_id: int, year: int, contract_type: str) -> None:
-    """Create employee_year_balance for this year if missing. Open-ended gets 20 days_at_start."""
+    """Create employee_year_balance for this year if missing. Open-ended gets 24 days_at_start."""
     cur = conn.execute(
         "SELECT 1 FROM employee_year_balance WHERE employee_id = ? AND year = ?",
         (employee_id, year),
     )
     if cur.fetchone():
         return
-    days_at_start = 20 if contract_type == "open_ended" else 0
+    days_at_start = 24 if contract_type == "open_ended" else 0
     conn.execute(
         "INSERT INTO employee_year_balance (employee_id, year, days_at_start, days_transferred) VALUES (?, ?, ?, 0)",
         (employee_id, year, days_at_start),

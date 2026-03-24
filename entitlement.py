@@ -10,7 +10,7 @@ def prorated_vacation_entitlement_for_year(
     contract_end_date: Optional[str],
 ) -> int:
     """
-    Full-year allowance is 20 days. Entitlement is prorated by share of the year
+    Full-year allowance is 24 days. Entitlement is prorated by share of the year
     from current_date until the effective end of employment within the calendar year.
 
     contract_end_date: ISO date string (yyyy-mm-dd) or None for open-ended.
@@ -29,5 +29,5 @@ def prorated_vacation_entitlement_for_year(
 
     days_remaining = (effective_end - current_date).days
     days_in_year = 366 if isleap(year) else 365
-    raw = (days_remaining / days_in_year) * 20
+    raw = (days_remaining / days_in_year) * 24
     return max(0, math.ceil(raw))

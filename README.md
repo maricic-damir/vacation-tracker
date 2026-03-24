@@ -10,7 +10,7 @@ Desktop app for tracking employee vacation days (Windows). Uses **PyQt6** and **
 
 Business rules:
 
-- **Open-ended contract**: 20 days at start of each calendar year (by law).
+- **Open-ended contract**: 24 days at start of each calendar year (by law).
 - **Transferred days** from previous year count only until **June** of the current year; after that they are not included in “days left”.
 - **Past start date**: Saving a vacation with start date in the past shows a warning; on confirm, the record is saved and marked as used.
 - **Completion job**: On startup, any record with `end_date < today` is marked completed (used days are already counted in balance).

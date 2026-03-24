@@ -175,14 +175,14 @@ Shows all vacation records across all employees.
    - **Last Name:** Employee's last name (required)
    - **Religion:** Orthodox or Catholic (affects which holidays apply)
    - **Contract Type:** 
-     - **Open-ended:** Permanent employment (automatically gets 20 days per year)
+     - **Open-ended:** Permanent employment (automatically gets 24 days per year)
      - **Fixed term:** Temporary contract
    - **Start Contract Date:** When employment began (optional, used for prorating)
    - **Contract End Date:** When contract expires (only for fixed-term contracts)
 3. Click **Save**
 
 **Important Notes:**
-- Open-ended contracts automatically receive 20 vacation days at the start of each calendar year (Serbian law)
+- Open-ended contracts automatically receive 24 vacation days at the start of each calendar year (Serbian law)
 - Fixed-term contracts start with 0 days and must be manually configured
 - Religion setting determines which religious holidays count as non-working days
 
@@ -198,7 +198,7 @@ Shows all vacation records across all employees.
 4. Click **Save**
 
 **Effect of Changes:**
-- Changing from fixed-term to open-ended will grant 20 days for the current year
+- Changing from fixed-term to open-ended will grant 24 days for the current year
 - Changing religion will recalculate existing vacation records based on the new holiday set
 
 ### Archiving Employees
@@ -217,7 +217,7 @@ The application tracks three types of vacation days:
 
 1. **Days at Start**
    - Allocated at the beginning of each year
-   - 20 days for open-ended contracts
+   - 24 days for open-ended contracts
    - 0 days for fixed-term contracts (unless manually set)
 
 2. **Transferred Days**
@@ -429,7 +429,7 @@ After June 30:
 
 #### 4. Open-Ended Contract Allocation
 On January 1 of each year:
-- Open-ended contracts automatically receive 20 days
+- Open-ended contracts automatically receive 24 days
 - This is done during the year rollover process
 - No manual intervention needed
 
@@ -438,11 +438,11 @@ On January 1 of each year:
 If an employee starts mid-year with an open-ended contract:
 
 **Example:** Employee starts on July 1, 2026
-- Full year entitlement: 20 days
-- Prorated for 6 months (July-December): 10 days
+- Full year entitlement: 24 days
+- Prorated for 6 months (July-December): 12 days
 - Application automatically calculates this based on start date
 
-**Formula:** `(20 days × months remaining) ÷ 12`
+**Formula:** `(24 days × months remaining) ÷ 12`
 
 ### Past Date Handling
 
@@ -550,7 +550,7 @@ Click **All Schedules** from the employee list:
 **Solutions:**
 - Ensure year balance was created for the current year
 - Check if employee needs year rollover from previous year
-- Verify contract type is set correctly (open-ended should auto-allocate 20 days)
+- Verify contract type is set correctly (open-ended should auto-allocate 24 days)
 
 ### Best Practices
 

@@ -26,7 +26,7 @@ def comprehensive_integration_test():
     conn = get_connection(":memory:")
     
     # Create employee
-    print("Step 1: Create employee with 20 days vacation")
+    print("Step 1: Create employee with 24 days vacation")
     print("-" * 70)
     employee_id = insert_employee(
         conn,
@@ -41,7 +41,7 @@ def comprehensive_integration_test():
     
     year = 2026
     ensure_year_balance(conn, employee_id, year, "open_ended")
-    set_days_at_start(conn, employee_id, year, 20)
+    set_days_at_start(conn, employee_id, year, 24)
     
     balance = get_year_balance(conn, employee_id, year)
     print(f"Employee: John Doe (Orthodox)")
@@ -270,7 +270,7 @@ def comprehensive_integration_test():
     print("FINAL SUMMARY")
     print("=" * 70)
     balance = get_year_balance(conn, employee_id, year)
-    print(f"Starting balance: 20 days")
+    print(f"Starting balance: 24 days")
     print(f"Days used: {balance['days_used']} days")
     print(f"Days remaining: {balance['days_left']} days")
     print()
