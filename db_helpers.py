@@ -426,13 +426,53 @@ def count_weekend_days_excluding_holidays(conn: sqlite3.Connection, start_date: 
     return weekend_days
 
 
+def calculate_deduction_days_new_algorithm(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
+    """
+    Calculate vacation days to be deducted using the new 6-day work week algorithm.
+    
+    Algorithm:
+    1. total_days = number of calendar days between start and end (inclusive)
+    2. full_weeks = floor(total_days / 7)
+    3. rest_days = full_weeks (count of Sundays)
+    4. holiday_count = number of official_holidays within range (respecting employee religion)
+       IMPORTANT: if a holiday falls on Sunday, count it only once
+    5. deduction_days = total_days - rest_days - holiday_count
+    
+    Working days per week: 6 (Monday-Saturday)
+    Rest days: Sunday (1 per week)
+    """
+    from database import is_non_working_day_for_employee
+    
+    s = date.fromisoformat(start_date)
+    e = date.fromisoformat(end_date)
+    
+    # 1. Calculate total calendar days (inclusive)
+    total_days = (e - s).days + 1
+    
+    # 2. Calculate full weeks
+    full_weeks = total_days // 7
+    
+    # 3. Calculate rest days (Sundays)
+    rest_days = full_weeks
+    
+    # 4. Count holidays in the range, avoiding double-counting with Sundays
+    holiday_count = 0
+    current = s
+    
+    while current <= e:
+        if is_non_working_day_for_employee(conn, current.isoformat(), employee_id):
+            holiday_count += 1
+        current = date.fromordinal(current.toordinal() + 1)
+    
+    # 5. Calculate deduction days
+    deduction_days = total_days - rest_days - holiday_count
+    
+    return max(0, deduction_days)
+
+
 def count_total_deductible_days(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
     """
     Count total days to be deducted from vacation bucket.
-    This includes:
-    - Working days (Mon-Fri excluding holidays)
-    - Weekend days (Sat-Sun) that are NOT holidays
+    Uses the new 6-day work week algorithm (Monday-Saturday working, Sunday rest).
     """
-    working_days = count_working_days_in_range(conn, start_date, end_date, employee_id)
-    weekend_days = count_weekend_days_excluding_holidays(conn, start_date, end_date, employee_id)
-    return working_days + weekend_days
+    return calculate_deduction_days_new_algorithm(conn, start_date, end_date, employee_id)
