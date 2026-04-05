@@ -4,13 +4,15 @@ Desktop app for tracking employee vacation days (Windows). Uses **PyQt6** and **
 
 ## Features
 
-- **Screen 1 – Employee list**: JMBG, name, contract type (fixed term / open-ended), total vacation days left. Double-click a row to open employee details. Buttons: Add employee, Schedule vacation/day off, All scheduled/used days.
+- **Screen 1 – Employee list**: JMBG, name, contract type (fixed term / open-ended), working days per week, total vacation days left. Double-click a row to open employee details. Buttons: Add employee, Schedule vacation/day off, All scheduled/used days, Manage Non-Working Days.
 - **Screen 2 – Employee details**: Properties, year balance (days at start, transferred from previous year, earned, used, left), tables of used days off and earned days. Buttons: Contract date/type, Set transferred days, Schedule vacation/day off, Add earned days.
 - **Screen 3 – All schedules**: Table of all vacation/day-off records (JMBG, name, booking date, start/end). Back to list.
 
 Business rules:
 
-- **Open-ended contract**: 24 days at start of each calendar year (by law).
+- **Working Days Per Week**: Choose between 5-day (Mon-Fri) or 6-day work weeks
+  - **5-day workers**: 20 vacation days per year, weekends (Sat-Sun) excluded from deductions
+  - **6-day workers**: 24 vacation days per year, only Sundays excluded from deductions
 - **Transferred days** from previous year count only until **June** of the current year; after that they are not included in “days left”.
 - **Past start date**: Saving a vacation with start date in the past shows a warning; on confirm, the record is saved and marked as used.
 - **Completion job**: On startup, any record with `end_date < today` is marked completed (used days are already counted in balance).
@@ -33,6 +35,15 @@ The employee detail screen shows remaining days per bucket to track which bucket
 cd vacation_tracker
 pip install -r requirements.txt
 ```
+
+## Initial Configuration
+
+After first run, configure your employees' working schedules:
+
+1. **For new employees**: Select working days per week (5 or 6) when adding them
+2. **For existing employees**: 
+   - Click on employee → "Contract date/type" → Set working days per week
+3. **Load holidays**: Click "Manage Non-Working Days" → Select year → "Fetch from Ministry Website" → Save
 
 ## Run
 
@@ -62,37 +73,40 @@ The EXE will be in `dist/VacationTracker.exe`. Run it on the target Windows mach
 
 ## New: Working Days & Holiday Management
 
-**Vacation days now count working days + requested weekend days!**
+**Vacation days now count working days only (excluding weekends and holidays)!**
 
-- **Working days counted**: Monday-Friday (excluding holidays)
-- **Weekend days counted**: Saturday-Sunday **are now deducted** unless they are holidays
-- **Holidays excluded**: Serbian public holidays are never deducted
-- **Religion-based filtering**: Orthodox employees get Orthodox holidays off, Catholic employees get Catholic holidays off, state holidays apply to everyone
+- **5-day work week**: Monday-Friday are working days, weekends (Sat-Sun) excluded from deductions
+- **6-day work week**: Monday-Saturday are working days, only Sundays excluded from deductions
+- **Holidays excluded**: Serbian public holidays are never deducted from vacation balance
+- **Flexible entitlements**: 20 days for 5-day workers, 24 days for 6-day workers
 - **Validation**: System prevents booking more days than available
 - **"Manage Non-Working Days" button**: Fetch holidays from web or enter manually
 - **Automatic recalculation**: Existing vacation records are updated when holidays change
-- **2026 holidays included**: 17 holidays pre-configured (8 state, 5 Orthodox, 4 Catholic)
+- **2026 holidays included**: 13 official Serbian holidays pre-configured
 
 **Quick start:**
 1. Run the app
-2. Click "Manage Non-Working Days" button
-3. Select year 2026
-4. Click "Fetch from Ministry Website"
-5. Review and click "Save"
+2. Set working days per week for employees (5 or 6 days)
+3. Click "Manage Non-Working Days" button
+4. Select year 2026
+5. Click "Fetch from Ministry Website"
+6. Review and click "Save"
 
-**Example:** Request Saturday-Sunday off (no holidays on these dates)
-- **Deducted: 2 days** from your vacation bucket
+**Example:** 5-day worker requests Saturday-Sunday off (no holidays)
+- **Deducted: 0 days** (weekends excluded for 5-day workers)
 
-**Example:** Orthodox employee books Dec 29, 2025 - Jan 5, 2026 (8 calendar days)
+**Example:** 6-day worker requests Saturday-Sunday off (no holidays)
+- **Deducted: 1 day** (Saturday is working day, Sunday excluded)
+
+**Example:** 5-day worker books Dec 29, 2025 - Jan 5, 2026 (8 calendar days)
 - Old behavior: 8 days deducted
-- New behavior: 4 working days deducted (excludes Jan 1-2 state holidays + Jan 7 Orthodox Christmas + weekend)
+- New behavior: 4 working days deducted (excludes Jan 1-2 state holidays + weekends)
+
+**Example:** 6-day worker books same dates (Dec 29, 2025 - Jan 5, 2026)
+- **Deducted: 5 working days** (includes Saturday Jan 4, excludes holidays and Sunday)
 
 **Example:** Request Monday-Sunday (7 days, no holidays)
-- **Deducted: 7 days** (5 working + 2 weekend)
+- **5-day worker: 5 days deducted** (Mon-Fri only)
+- **6-day worker: 6 days deducted** (Mon-Sat only)
 
-**Example:** Request Saturday-Sunday where Sunday is a holiday
-- **Deducted: 1 day** (only Saturday; Sunday is holiday)
-
-Catholic employee booking same dates: 5 working days deducted (Jan 7 is a working day for them)
-
-See `WEEKEND_DEDUCTION_QUICK_REFERENCE.md`, `QUICK_START.md`, `IMPLEMENTATION_SUMMARY.md`, and `RELIGION_IMPLEMENTATION.md` for detailed documentation.
+See `QUICK_START.md` and `Documentation/IMPLEMENTATION_SUMMARY.md` for detailed documentation.
