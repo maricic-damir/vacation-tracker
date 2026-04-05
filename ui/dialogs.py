@@ -409,12 +409,8 @@ class ManageNonWorkingDaysDialog(QDialog):
         
         layout = QVBoxLayout(self)
         
-        # Year selection and fetch button
         top_layout = QHBoxLayout()
-        if tr("language") == "Language":  # English
-            top_layout.addWidget(QLabel("Year:"))
-        else:  # Serbian
-            top_layout.addWidget(QLabel("Година:"))
+        top_layout.addWidget(QLabel(tr("year") + ":"))
         
         self.year_combo = QComboBox()
         current_year = date.today().year
@@ -424,31 +420,22 @@ class ManageNonWorkingDaysDialog(QDialog):
         self.year_combo.currentTextChanged.connect(self._on_year_changed)
         top_layout.addWidget(self.year_combo)
         
-        if tr("language") == "Language":  # English
-            fetch_text = "Fetch from Ministry Website"
-        else:  # Serbian
-            fetch_text = "Преузми са сајта министарства"
-        self.fetch_btn = QPushButton(fetch_text)
+        self.fetch_btn = QPushButton(tr("fetch_from_ministry"))
         self.fetch_btn.clicked.connect(self._fetch_holidays)
         top_layout.addWidget(self.fetch_btn)
         
         top_layout.addStretch()
         layout.addLayout(top_layout)
         
-        # Source info label
         self.source_label = QLabel("")
         self.source_label.setWordWrap(True)
         layout.addWidget(self.source_label)
         
-        # Table for holidays
         self.table = QTableWidget()
         self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels([
-            "Include", "Date", "Name (Serbian)", "Name (English)", "Type", "Applies To", "ID"
-        ])
+        self._refresh_table_headers()
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         
-        # Make columns resizable
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -458,42 +445,85 @@ class ManageNonWorkingDaysDialog(QDialog):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         
-        # Hide ID column (used internally)
         self.table.setColumnHidden(6, True)
         
         layout.addWidget(self.table)
         
-        # Action buttons
         btn_layout = QHBoxLayout()
         
-        self.add_btn = QPushButton("Add Custom Holiday")
+        self.add_btn = QPushButton(tr("add_custom_holiday"))
         self.add_btn.clicked.connect(self._add_custom_holiday)
         btn_layout.addWidget(self.add_btn)
         
-        self.delete_btn = QPushButton("Delete Selected")
+        self.delete_btn = QPushButton(tr("delete_selected"))
         self.delete_btn.clicked.connect(self._delete_selected)
         btn_layout.addWidget(self.delete_btn)
         
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
         
-        # Dialog buttons
-        button_box = QDialogButtonBox(
+        self._button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
-        button_box.accepted.connect(self._save_holidays)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
+        self._button_box.accepted.connect(self._save_holidays)
+        self._button_box.rejected.connect(self.reject)
+        self._button_box.button(QDialogButtonBox.StandardButton.Save).setText(tr("save"))
+        self._button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr("cancel"))
+        layout.addWidget(self._button_box)
         
-        # Load existing holidays for current year
         self._load_existing_holidays()
     
+    def _refresh_table_headers(self):
+        self.table.setHorizontalHeaderLabels([
+            tr("include"),
+            tr("date"),
+            tr("name_serbian"),
+            tr("name_english"),
+            tr("holiday_type"),
+            tr("applies_to"),
+            tr("id_column"),
+        ])
+    
+    def _applies_to_for_type(self, holiday_type: str) -> str:
+        if holiday_type == "state":
+            return tr("holiday_applies_everyone")
+        if holiday_type == "orthodox":
+            return tr("holiday_applies_orthodox_only")
+        if holiday_type == "catholic":
+            return tr("holiday_applies_catholic_only")
+        return tr("holiday_applies_other")
+    
+    def _make_holiday_type_combo(self, current_key: str) -> QComboBox:
+        combo = QComboBox()
+        for key in ("state", "orthodox", "catholic", "other_religious"):
+            label = {
+                "state": tr("state"),
+                "orthodox": tr("orthodox"),
+                "catholic": tr("catholic"),
+                "other_religious": tr("other_religious"),
+            }[key]
+            combo.addItem(label, key)
+        idx = combo.findData(current_key)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        return combo
+    
+    def _wire_holiday_type_combo(self, combo: QComboBox):
+        def on_change(_idx: int):
+            key = combo.currentData()
+            if key is None:
+                return
+            for r in range(self.table.rowCount()):
+                if self.table.cellWidget(r, 4) is combo:
+                    applies = self.table.item(r, 5)
+                    if applies:
+                        applies.setText(self._applies_to_for_type(key))
+                    break
+        combo.currentIndexChanged.connect(on_change)
+    
     def _on_year_changed(self, year_text: str):
-        """Load existing holidays when year changes."""
         self._load_existing_holidays()
     
     def _load_existing_holidays(self):
-        """Load existing holidays from database for selected year."""
         if not self._conn:
             return
         
@@ -503,18 +533,18 @@ class ManageNonWorkingDaysDialog(QDialog):
         self._holidays = get_non_working_days(self._conn, year)
         
         if self._holidays:
-            self.source_label.setText(f"Loaded {len(self._holidays)} existing holidays from database")
+            self.source_label.setText(tr("loaded_existing_holidays", count=len(self._holidays)))
             self._populate_table()
         else:
-            self.source_label.setText("No holidays in database for this year. Click 'Fetch from Ministry Website' to load.")
+            self.source_label.setText(
+                tr("no_holidays_use_fetch", action=tr("fetch_from_ministry"))
+            )
             self.table.setRowCount(0)
     
     def _fetch_holidays(self):
-        """Fetch holidays from web sources."""
         year = int(self.year_combo.currentText())
         
-        # Show progress dialog
-        progress = QProgressDialog("Fetching holidays...", None, 0, 0, self)
+        progress = QProgressDialog(tr("fetching_holidays"), None, 0, 0, self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
@@ -530,141 +560,117 @@ class ManageNonWorkingDaysDialog(QDialog):
             if not holidays:
                 QMessageBox.warning(
                     self,
-                    "No Data",
-                    f"Could not fetch holidays for {year}.\n\n{source}\n\nYou can add holidays manually."
+                    tr("no_data"),
+                    tr("could_not_fetch_holidays", year=year, source=source),
                 )
                 return
             
             self._holidays = holidays
-            self.source_label.setText(f"Source: {source}")
+            self.source_label.setText(tr("source_prefix", source=source))
             self._populate_table()
             
         except Exception as e:
             progress.close()
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Failed to fetch holidays: {str(e)}"
+                tr("error"),
+                tr("failed_to_fetch_holidays", error=str(e)),
             )
     
     def _populate_table(self):
-        """Populate table with current holidays list."""
         self.table.setRowCount(len(self._holidays))
         
         for row, holiday in enumerate(self._holidays):
-            # Checkbox for include/exclude
             checkbox = QCheckBox()
             checkbox.setChecked(True)
             cell_widget = QWidget()
-            layout = QHBoxLayout(cell_widget)
-            layout.addWidget(checkbox)
-            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.setContentsMargins(0, 0, 0, 0)
+            cell_lay = QHBoxLayout(cell_widget)
+            cell_lay.addWidget(checkbox)
+            cell_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell_lay.setContentsMargins(0, 0, 0, 0)
             self.table.setCellWidget(row, 0, cell_widget)
             
-            # Date
-            date_item = QTableWidgetItem(holiday['date'])
+            date_item = QTableWidgetItem(holiday["date"])
             self.table.setItem(row, 1, date_item)
             
-            # Name (Serbian) - editable
-            name_sr_item = QTableWidgetItem(holiday['name_sr'])
+            name_sr_item = QTableWidgetItem(holiday["name_sr"])
             self.table.setItem(row, 2, name_sr_item)
             
-            # Name (English) - editable
-            name_en_item = QTableWidgetItem(holiday.get('name_en', ''))
+            name_en_item = QTableWidgetItem(holiday.get("name_en", ""))
             self.table.setItem(row, 3, name_en_item)
             
-            # Type - combo box
-            type_combo = QComboBox()
-            type_combo.addItems(['state', 'orthodox', 'catholic', 'other_religious'])
-            type_combo.setCurrentText(holiday['holiday_type'])
+            htype = holiday["holiday_type"]
+            type_combo = self._make_holiday_type_combo(htype)
+            self._wire_holiday_type_combo(type_combo)
             self.table.setCellWidget(row, 4, type_combo)
             
-            # Applies To - non-editable label
-            holiday_type = holiday['holiday_type']
-            if holiday_type == 'state':
-                applies_to = "Everyone"
-            elif holiday_type == 'orthodox':
-                applies_to = "Orthodox only"
-            elif holiday_type == 'catholic':
-                applies_to = "Catholic only"
-            else:
-                applies_to = "Other"
-            applies_item = QTableWidgetItem(applies_to)
+            applies_item = QTableWidgetItem(self._applies_to_for_type(htype))
             applies_item.setFlags(applies_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 5, applies_item)
             
-            # ID (hidden)
-            id_item = QTableWidgetItem(str(holiday.get('id', '')))
+            id_item = QTableWidgetItem(str(holiday.get("id", "")))
             self.table.setItem(row, 6, id_item)
     
     def _add_custom_holiday(self):
-        """Add a custom holiday row."""
         row = self.table.rowCount()
         self.table.insertRow(row)
         
-        # Checkbox
         checkbox = QCheckBox()
         checkbox.setChecked(True)
         cell_widget = QWidget()
-        layout = QHBoxLayout(cell_widget)
-        layout.addWidget(checkbox)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setContentsMargins(0, 0, 0, 0)
+        cell_lay = QHBoxLayout(cell_widget)
+        cell_lay.addWidget(checkbox)
+        cell_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cell_lay.setContentsMargins(0, 0, 0, 0)
         self.table.setCellWidget(row, 0, cell_widget)
         
-        # Date - use current year
         year = self.year_combo.currentText()
         date_item = QTableWidgetItem(f"{year}-01-01")
         self.table.setItem(row, 1, date_item)
         
-        # Names
         self.table.setItem(row, 2, QTableWidgetItem(""))
         self.table.setItem(row, 3, QTableWidgetItem(""))
         
-        # Type
-        type_combo = QComboBox()
-        type_combo.addItems(['state', 'orthodox', 'catholic', 'other_religious'])
+        type_combo = self._make_holiday_type_combo("state")
+        self._wire_holiday_type_combo(type_combo)
         self.table.setCellWidget(row, 4, type_combo)
         
-        # Applies To
-        applies_item = QTableWidgetItem("Everyone")
+        applies_item = QTableWidgetItem(self._applies_to_for_type("state"))
         applies_item.setFlags(applies_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.table.setItem(row, 5, applies_item)
         
-        # ID
         self.table.setItem(row, 6, QTableWidgetItem(""))
     
     def _delete_selected(self):
-        """Delete selected rows."""
         selected_rows = set(index.row() for index in self.table.selectedIndexes())
         
         if not selected_rows:
-            QMessageBox.information(self, "No Selection", "Please select rows to delete.")
+            QMessageBox.information(
+                self,
+                tr("no_selection"),
+                tr("select_rows_to_delete"),
+            )
             return
         
         reply = QMessageBox.question(
             self,
-            "Confirm Delete",
-            f"Delete {len(selected_rows)} selected holiday(s)?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            tr("confirm_delete"),
+            tr("confirm_delete_holidays", count=len(selected_rows)),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            for row in sorted(selected_rows, reverse=True):
-                self.table.removeRow(row)
+            for r in sorted(selected_rows, reverse=True):
+                self.table.removeRow(r)
     
     def _save_holidays(self):
-        """Save holidays to database."""
         if not self._conn:
-            QMessageBox.critical(self, "Error", "No database connection.")
+            QMessageBox.critical(self, tr("error"), tr("no_database_connection"))
             return
         
-        # Collect holidays from table
         holidays_to_save = []
         
         for row in range(self.table.rowCount()):
-            # Check if included
             checkbox_widget = self.table.cellWidget(row, 0)
             checkbox = checkbox_widget.findChild(QCheckBox)
             if not checkbox or not checkbox.isChecked():
@@ -674,14 +680,15 @@ class ManageNonWorkingDaysDialog(QDialog):
             name_sr = self.table.item(row, 2).text().strip()
             name_en = self.table.item(row, 3).text().strip()
             type_combo = self.table.cellWidget(row, 4)
-            holiday_type = type_combo.currentText()
+            holiday_type = type_combo.currentData()
+            if holiday_type is None:
+                holiday_type = "state"
             
-            # Validate
             if not date_str or not name_sr:
                 QMessageBox.warning(
                     self,
-                    "Validation Error",
-                    f"Row {row + 1}: Date and Serbian name are required."
+                    tr("validation_error"),
+                    tr("row_date_serbian_required", row=row + 1),
                 )
                 return
             
@@ -690,30 +697,32 @@ class ManageNonWorkingDaysDialog(QDialog):
             except ValueError:
                 QMessageBox.warning(
                     self,
-                    "Validation Error",
-                    f"Row {row + 1}: Invalid date format. Use YYYY-MM-DD."
+                    tr("validation_error"),
+                    tr("row_invalid_date_yyyy_mm_dd", row=row + 1),
                 )
                 return
             
             holidays_to_save.append({
-                'date': date_str,
-                'name_sr': name_sr,
-                'name_en': name_en,
-                'holiday_type': holiday_type
+                "date": date_str,
+                "name_sr": name_sr,
+                "name_en": name_en,
+                "holiday_type": holiday_type,
             })
         
         if not holidays_to_save:
-            QMessageBox.information(self, "No Holidays", "No holidays selected to save.")
+            QMessageBox.information(
+                self,
+                tr("no_holidays"),
+                tr("no_holidays_selected_save"),
+            )
             return
         
-        # Confirm save
         year = self.year_combo.currentText()
         reply = QMessageBox.question(
             self,
-            "Confirm Save",
-            f"Save {len(holidays_to_save)} non-working day(s) for {year}?\n\n"
-            f"This will update the database and recalculate all vacation records.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            tr("confirm_save_non_working_title"),
+            tr("confirm_save_non_working", count=len(holidays_to_save), year=year),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         
         if reply != QMessageBox.StandardButton.Yes:
@@ -724,8 +733,7 @@ class ManageNonWorkingDaysDialog(QDialog):
             
             count = save_non_working_days(self._conn, holidays_to_save)
             
-            # Recalculate all vacation records with new holiday data
-            progress = QProgressDialog("Recalculating vacation records...", None, 0, 0, self)
+            progress = QProgressDialog(tr("recalculating_vacation"), None, 0, 0, self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
             progress.setMinimumDuration(0)
             progress.setValue(0)
@@ -737,9 +745,8 @@ class ManageNonWorkingDaysDialog(QDialog):
             
             QMessageBox.information(
                 self,
-                "Success",
-                f"Successfully saved {count} non-working day(s) for {year}.\n\n"
-                f"All vacation records have been recalculated."
+                tr("success"),
+                tr("saved_non_working_recalculated", count=count, year=year),
             )
             
             self.accept()
@@ -747,8 +754,8 @@ class ManageNonWorkingDaysDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Failed to save holidays: {str(e)}"
+                tr("error"),
+                tr("failed_to_save_holidays_msg", error=str(e)),
             )
 
 
