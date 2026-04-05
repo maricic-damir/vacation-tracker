@@ -4,6 +4,7 @@ from datetime import date
 from PyQt6.QtWidgets import (
     QDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -199,25 +200,46 @@ class EmployeeDetailScreen(QWidget):
         earned_layout.addWidget(self._earned_table)
         lay.addWidget(self._earned_group)
 
-        # Buttons
-        btn_lay = QHBoxLayout()
-        self._btn_contract = QPushButton()
-        self._btn_contract.clicked.connect(self._edit_contract)
-        btn_lay.addWidget(self._btn_contract)
-        self._btn_transferred = QPushButton()
-        self._btn_transferred.clicked.connect(self._set_transferred_days)
-        btn_lay.addWidget(self._btn_transferred)
+        # First row buttons: Schedule vacation and Special leave entitlements
+        first_row_lay = QHBoxLayout()
         self._btn_schedule = QPushButton()
         self._btn_schedule.clicked.connect(self._schedule_vacation)
-        btn_lay.addWidget(self._btn_schedule)
+        first_row_lay.addWidget(self._btn_schedule)
+        self._btn_special_leaves = QPushButton()
+        self._btn_special_leaves.clicked.connect(self._schedule_special_leave)
+        first_row_lay.addWidget(self._btn_special_leaves)
+        first_row_lay.addStretch()
+        lay.addLayout(first_row_lay)
+
+        # Divider line
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFrameShadow(QFrame.Shadow.Sunken)
+        divider.setStyleSheet("margin: 10px 0px;")
+        lay.addWidget(divider)
+        
+        # Label for configuration buttons
+        self._config_label = QLabel()
+        self._config_label.setStyleSheet("font-weight: bold;")
+        lay.addWidget(self._config_label)
+
+        # Second row buttons: Contract, Transferred days, Earned days (left), Print (right)
+        second_row_lay = QHBoxLayout()
+        self._btn_contract = QPushButton()
+        self._btn_contract.clicked.connect(self._edit_contract)
+        second_row_lay.addWidget(self._btn_contract)
+        self._btn_transferred = QPushButton()
+        self._btn_transferred.clicked.connect(self._set_transferred_days)
+        second_row_lay.addWidget(self._btn_transferred)
         self._btn_earned = QPushButton()
         self._btn_earned.clicked.connect(self._add_earned_days)
-        btn_lay.addWidget(self._btn_earned)
+        second_row_lay.addWidget(self._btn_earned)
+        second_row_lay.addStretch()  # This pushes the print button to the right
         self._btn_print = QPushButton()
         self._btn_print.clicked.connect(self._print_employee)
-        btn_lay.addWidget(self._btn_print)
-        btn_lay.addStretch()
-        lay.addLayout(btn_lay)
+        self._btn_print.setMinimumSize(120, 32)  # Make print button bigger and more visible
+        second_row_lay.addWidget(self._btn_print)
+        lay.addLayout(second_row_lay)
 
     def set_employee(self, employee_id: int):
         self._employee_id = employee_id
@@ -232,8 +254,15 @@ class EmployeeDetailScreen(QWidget):
         self._btn_contract.setText(tr("contract_date_type"))
         self._btn_transferred.setText(tr("set_transferred_days"))
         self._btn_schedule.setText(tr("schedule_vacation"))
+        self._btn_special_leaves.setText(tr("special_leaves"))
         self._btn_earned.setText(tr("add_earned_days"))
         self._btn_print.setText(tr("print"))
+        
+        # Configuration section label
+        if tr("language") == "Language":  # English
+            self._config_label.setText("Configuration:")
+        else:  # Serbian
+            self._config_label.setText("Конфигурација:")
         
         # Update table headers
         self._used_table.setHorizontalHeaderLabels([
@@ -295,6 +324,17 @@ class EmployeeDetailScreen(QWidget):
         self._props_layout.addRow(
             _form_row_label(tr("status") + ":", lw),
             _form_value_label(tr("active") if emp.get("is_active") else tr("archived"), expand_field=True),
+        )
+        
+        # Working days per week
+        working_days = emp.get("working_days_per_week", 6)
+        if tr("language") == "Language":  # English
+            working_days_text = f"{working_days} days per week" + (" (Mon-Fri)" if working_days == 5 else "")
+        else:  # Serbian
+            working_days_text = f"{working_days} дана недељно" + (" (пон-пет)" if working_days == 5 else "")
+        self._props_layout.addRow(
+            _form_row_label(tr("working_days_per_week") + ":", lw),
+            _form_value_label(working_days_text, expand_field=True),
         )
 
         # Balance (right column; title shows year)
@@ -371,12 +411,13 @@ class EmployeeDetailScreen(QWidget):
             current_end_date=emp.get("contract_end_date") or None,
             current_days_at_start=balance.get("days_at_start", 0),
             current_religion=emp.get("religion", "orthodox"),
+            current_working_days_per_week=emp.get("working_days_per_week", 6),
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         data = dlg.get_data()
         try:
-            update_employee_contract(conn, self._employee_id, data["contract_type"], data["contract_end_date"], data["religion"])
+            update_employee_contract(conn, self._employee_id, data["contract_type"], data["contract_end_date"], data["religion"], data["working_days_per_week"])
             if data["contract_type"] == "fixed_term":
                 set_days_at_start(conn, self._employee_id, year, data.get("days_at_start", 0))
         except Exception as e:
@@ -489,6 +530,26 @@ class EmployeeDetailScreen(QWidget):
         self._load()
         self._refresh()
 
+    def _schedule_special_leave(self):
+        """Open the special leave dialog for this employee."""
+        if not self._employee_id:
+            return
+        conn = self._conn()
+        if not conn:
+            return
+        from db_helpers import get_employee
+        from ui.dialogs import SpecialLeaveDialog
+        
+        emp = get_employee(conn, self._employee_id)
+        if not emp:
+            return
+        emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+        
+        dialog = SpecialLeaveDialog(self, conn, self._employee_id, emp_name)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._load()  # Refresh the screen to show any changes
+            self._refresh()  # Refresh the parent screen as well
+
     def refresh(self):
         if self._employee_id:
             self._load()
@@ -578,6 +639,13 @@ class EmployeeDetailScreen(QWidget):
                 <tr>
                     <td class="label-cell">{tr('status')}:</td>
                     <td>{tr('active') if emp.get('is_active') else tr('archived')}</td>
+                    <td class="gap-cell"></td>
+                    <td class="label-cell"></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="label-cell">{tr('working_days_per_week')}:</td>
+                    <td>{emp.get('working_days_per_week', 6)} {'days per week' if tr('language') == 'Language' else 'дана недељно'}{' (Mon-Fri)' if emp.get('working_days_per_week', 6) == 5 and tr('language') == 'Language' else ' (пон-пет)' if emp.get('working_days_per_week', 6) == 5 else ''}</td>
                     <td class="gap-cell"></td>
                     <td class="label-cell"></td>
                     <td></td>

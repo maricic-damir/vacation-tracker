@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS employees (
     contract_type TEXT NOT NULL CHECK (contract_type IN ('fixed_term', 'open_ended')),
     contract_end_date DATE NULL,
     religion TEXT NOT NULL DEFAULT 'orthodox' CHECK (religion IN ('orthodox', 'catholic')),
+    working_days_per_week INTEGER NOT NULL DEFAULT 6 CHECK (working_days_per_week IN (5, 6)),
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -74,12 +75,37 @@ CREATE TABLE IF NOT EXISTS non_working_days (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Special leave types (child birth, wedding, etc.)
+CREATE TABLE IF NOT EXISTS special_leave_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name_en TEXT NOT NULL,
+    name_sr TEXT NOT NULL,
+    days_entitled INTEGER NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Special leave usage tracking
+CREATE TABLE IF NOT EXISTS special_leave_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    special_leave_type_id INTEGER NOT NULL REFERENCES special_leave_types(id) ON DELETE CASCADE,
+    usage_date DATE NOT NULL,
+    days_used INTEGER NOT NULL,
+    reason_notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS ix_vacation_employee ON vacation_records(employee_id);
 CREATE INDEX IF NOT EXISTS ix_vacation_dates ON vacation_records(start_date, end_date);
 CREATE INDEX IF NOT EXISTS ix_earned_employee ON earned_days(employee_id);
 CREATE INDEX IF NOT EXISTS ix_earned_date ON earned_days(earned_date);
 CREATE INDEX IF NOT EXISTS ix_non_working_date ON non_working_days(date);
 CREATE INDEX IF NOT EXISTS ix_non_working_active ON non_working_days(is_active);
+CREATE INDEX IF NOT EXISTS ix_special_leave_usage_employee ON special_leave_usage(employee_id);
+CREATE INDEX IF NOT EXISTS ix_special_leave_usage_type ON special_leave_usage(special_leave_type_id);
+CREATE INDEX IF NOT EXISTS ix_special_leave_usage_date ON special_leave_usage(usage_date);
 """
 
 
@@ -89,6 +115,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
     migrate_add_non_working_days(conn)
     migrate_add_religion(conn)
     migrate_add_start_contract_date(conn)
+    migrate_add_special_leave_tables(conn)
+    migrate_add_working_days_per_week(conn)
     conn.commit()
 
 
@@ -214,14 +242,23 @@ def resolve_db_path(choose_or_create_callback, locate_callback) -> Optional[str]
 
 
 def ensure_year_balance(conn: sqlite3.Connection, employee_id: int, year: int, contract_type: str) -> None:
-    """Create employee_year_balance for this year if missing. Open-ended gets 24 days_at_start."""
+    """Create employee_year_balance for this year if missing. Open-ended gets days based on working days per week."""
     cur = conn.execute(
         "SELECT 1 FROM employee_year_balance WHERE employee_id = ? AND year = ?",
         (employee_id, year),
     )
     if cur.fetchone():
         return
-    days_at_start = 24 if contract_type == "open_ended" else 0
+    
+    # Get employee's working days per week to determine days_at_start for open-ended contracts
+    if contract_type == "open_ended":
+        cur = conn.execute("SELECT working_days_per_week FROM employees WHERE id = ?", (employee_id,))
+        row = cur.fetchone()
+        working_days_per_week = row[0] if row else 6  # Default to 6 for backwards compatibility
+        days_at_start = 20 if working_days_per_week == 5 else 24
+    else:
+        days_at_start = 0
+    
     conn.execute(
         "INSERT INTO employee_year_balance (employee_id, year, days_at_start, days_transferred) VALUES (?, ?, ?, 0)",
         (employee_id, year, days_at_start),
@@ -276,6 +313,15 @@ def run_completion_job(conn: sqlite3.Connection) -> None:
 def rollover_year_for_employee(conn: sqlite3.Connection, employee_id: int, from_year: int, to_year: int) -> bool:
     """
     Rollover an employee's balance from one year to the next.
+    
+    IMPORTANT BUSINESS RULES:
+    - Regular vacation days: Unused days are transferred to the new year
+    - Special leave entitlements: RESET to full entitlement (no transfer)
+    
+    Special leave policy: Special leave entitlements are completely reset each year.
+    Unused special leave days cannot be transferred and are lost at year-end.
+    Each employee gets their full special leave entitlement renewed each January 1st.
+    
     Returns True if rollover was performed, False if skipped (already exists or no balance).
     """
     from entitlement import prorated_vacation_entitlement_for_year
@@ -292,19 +338,27 @@ def rollover_year_for_employee(conn: sqlite3.Connection, employee_id: int, from_
     if not employee:
         return False
     
+    # Handle regular vacation days rollover (existing logic)
     balance = get_year_balance(conn, employee_id, from_year)
     
     unused_days = balance["transferred_left"] + balance["at_start_left"] + balance["earned_left"]
     
     days_at_start = prorated_vacation_entitlement_for_year(
         date(to_year, 1, 1),
-        employee["contract_end_date"] if employee["contract_end_date"] else None
+        employee["contract_end_date"] if employee["contract_end_date"] else None,
+        employee.get("working_days_per_week", 6)
     )
     
     conn.execute(
         "INSERT INTO employee_year_balance (employee_id, year, days_at_start, days_transferred) VALUES (?, ?, ?, ?)",
         (employee_id, to_year, days_at_start, unused_days),
     )
+    
+    # Handle special leave reset (NEW FUNCTIONALITY)
+    # Special leave entitlements are reset each year - unused days are NOT transferred
+    # This ensures employees get their full special leave entitlement renewed annually
+    reset_special_leave_for_employee(conn, employee_id, from_year, to_year)
+    
     conn.commit()
     return True
 
@@ -312,6 +366,8 @@ def rollover_year_for_employee(conn: sqlite3.Connection, employee_id: int, from_
 def rollover_all_employees(conn: sqlite3.Connection, from_year: int, to_year: int) -> int:
     """
     Rollover all active employees from one year to the next.
+    
+    This function handles both regular vacation rollover and special leave reset.
     Returns count of employees processed.
     """
     cur = conn.execute("SELECT id FROM employees WHERE is_active = 1")
@@ -323,6 +379,43 @@ def rollover_all_employees(conn: sqlite3.Connection, from_year: int, to_year: in
             processed_count += 1
     
     return processed_count
+
+
+def reset_special_leave_for_employee(conn: sqlite3.Connection, employee_id: int, from_year: int, to_year: int) -> None:
+    """
+    Reset special leave entitlements for an employee during year rollover.
+    
+    BUSINESS RULE: Special leave entitlements are completely reset each year.
+    - Unused special leave days from the previous year are lost (not transferred)
+    - Each employee gets their full special leave entitlement renewed for the new year
+    - This is different from regular vacation days which can be transferred
+    
+    This function does NOT delete historical usage records - it simply ensures
+    that the employee gets their full entitlement for the new year regardless
+    of how much they used in the previous year.
+    
+    Args:
+        conn: Database connection
+        employee_id: ID of the employee
+        from_year: Previous year (for logging/audit purposes)
+        to_year: New year (when entitlements are reset)
+    """
+    # Note: We don't need to do anything special here because the special leave
+    # system already works on a per-year basis. The get_special_leave_balance_for_employee()
+    # function calculates available days by subtracting usage from entitlements
+    # for each year independently.
+    #
+    # The "reset" happens naturally because:
+    # 1. Each year's usage is tracked separately by date
+    # 2. Entitlements are global (not year-specific)
+    # 3. Available days = entitlement - usage_for_current_year
+    #
+    # So when we move to a new year, usage_for_current_year starts at 0,
+    # giving the employee their full entitlement again.
+    
+    # Optional: Log the reset for audit purposes
+    # This could be useful for tracking when rollovers occurred
+    pass  # No action needed - reset happens automatically due to year-based calculations
 
 
 def is_rollover_complete(conn: sqlite3.Connection, year: int) -> bool:
@@ -370,6 +463,43 @@ def migrate_add_start_contract_date(conn: sqlite3.Connection) -> None:
     
     if "start_contract_date" not in columns:
         conn.execute("ALTER TABLE employees ADD COLUMN start_contract_date DATE NULL")
+        conn.commit()
+
+
+def migrate_add_special_leave_tables(conn: sqlite3.Connection) -> None:
+    """Add special leave tables if they don't exist and populate with default types."""
+    # Check if we already have data in the table
+    cur = conn.execute("SELECT COUNT(*) FROM special_leave_types")
+    count = cur.fetchone()[0]
+    if count > 0:
+        return  # Data already exists
+    
+    # Populate with default types
+    default_types = [
+        {"name_en": "Child birth", "name_sr": "Рођење детета", "days_entitled": 7},
+        {"name_en": "Wedding", "name_sr": "Венчање", "days_entitled": 7},
+        {"name_en": "Moving", "name_sr": "Селидба", "days_entitled": 2},
+        {"name_en": "Death of a member of a wider family", "name_sr": "Смрт члана шире породице", "days_entitled": 1},
+        {"name_en": "Deaths of a member of the immediate family and members of the household", "name_sr": "Смрт члана уже породице и домаћинства", "days_entitled": 3},
+    ]
+    
+    for leave_type in default_types:
+        conn.execute("""
+            INSERT INTO special_leave_types (name_en, name_sr, days_entitled, is_active)
+            VALUES (?, ?, ?, 1)
+        """, (leave_type["name_en"], leave_type["name_sr"], leave_type["days_entitled"]))
+    
+    conn.commit()
+
+
+def migrate_add_working_days_per_week(conn: sqlite3.Connection) -> None:
+    """Add working_days_per_week column to employees table if it doesn't exist."""
+    cur = conn.execute("PRAGMA table_info(employees)")
+    columns = {row[1] for row in cur.fetchall()}
+    
+    if "working_days_per_week" not in columns:
+        # Add working_days_per_week column with default 6 for existing employees
+        conn.execute("ALTER TABLE employees ADD COLUMN working_days_per_week INTEGER NOT NULL DEFAULT 6 CHECK (working_days_per_week IN (5, 6))")
         conn.commit()
 
 
@@ -573,3 +703,129 @@ def clear_non_working_days(conn: sqlite3.Connection, year: int) -> int:
     count = cur.rowcount
     conn.commit()
     return count
+
+
+# ---------------------------------------------------------------------------
+# Special leave CRUD
+# ---------------------------------------------------------------------------
+
+def get_special_leave_types(conn: sqlite3.Connection) -> list[dict]:
+    """
+    Get all active special leave types.
+    
+    IMPORTANT: Special leave entitlements are reset annually and cannot be transferred.
+    Unlike regular vacation days, unused special leave days are lost at year-end.
+    
+    Returns list of dicts with keys: id, name_en, name_sr, days_entitled
+    """
+    cur = conn.execute("""
+        SELECT id, name_en, name_sr, days_entitled
+        FROM special_leave_types
+        WHERE is_active = 1
+        ORDER BY id
+    """)
+    return [dict(row) for row in cur.fetchall()]
+
+
+def get_special_leave_usage_for_employee(conn: sqlite3.Connection, employee_id: int, year: Optional[int] = None) -> list[dict]:
+    """
+    Get special leave usage for an employee, optionally filtered by year.
+    Returns list of dicts with keys: id, special_leave_type_id, usage_date, days_used, reason_notes, type_name_en, type_name_sr
+    """
+    if year:
+        cur = conn.execute("""
+            SELECT slu.id, slu.special_leave_type_id, slu.usage_date, slu.days_used, slu.reason_notes,
+                   slt.name_en as type_name_en, slt.name_sr as type_name_sr
+            FROM special_leave_usage slu
+            JOIN special_leave_types slt ON slu.special_leave_type_id = slt.id
+            WHERE slu.employee_id = ? AND strftime('%Y', slu.usage_date) = ?
+            ORDER BY slu.usage_date DESC
+        """, (employee_id, str(year)))
+    else:
+        cur = conn.execute("""
+            SELECT slu.id, slu.special_leave_type_id, slu.usage_date, slu.days_used, slu.reason_notes,
+                   slt.name_en as type_name_en, slt.name_sr as type_name_sr
+            FROM special_leave_usage slu
+            JOIN special_leave_types slt ON slu.special_leave_type_id = slt.id
+            WHERE slu.employee_id = ?
+            ORDER BY slu.usage_date DESC
+        """, (employee_id,))
+    return [dict(row) for row in cur.fetchall()]
+
+
+def get_special_leave_balance_for_employee(conn: sqlite3.Connection, employee_id: int, year: int) -> dict:
+    """
+    Calculate special leave balance for an employee for a specific year.
+    
+    BUSINESS RULE: Special leave entitlements reset annually (January 1st).
+    - Each year, employees get their full special leave entitlement
+    - Unused days from previous years are NOT carried over
+    - Balance = full_entitlement - usage_in_current_year_only
+    
+    This is different from regular vacation days which can be transferred between years.
+    
+    Returns dict with leave type IDs as keys and balance info as values.
+    Each value contains: 'entitled', 'used', 'remaining'
+    """
+    # Get all leave types
+    leave_types = get_special_leave_types(conn)
+    
+    # Get usage for this year
+    usage = get_special_leave_usage_for_employee(conn, employee_id, year)
+    
+    # Calculate balances
+    balances = {}
+    for leave_type in leave_types:
+        type_id = leave_type['id']
+        entitled = leave_type['days_entitled']
+        
+        # Sum usage for this type in this year
+        used = sum(u['days_used'] for u in usage if u['special_leave_type_id'] == type_id)
+        
+        balances[type_id] = {
+            'type_name_en': leave_type['name_en'],
+            'type_name_sr': leave_type['name_sr'],
+            'entitled': entitled,
+            'used': used,
+            'remaining': max(0, entitled - used)
+        }
+    
+    return balances
+
+
+def add_special_leave_usage(conn: sqlite3.Connection, employee_id: int, special_leave_type_id: int, 
+                           usage_date: str, days_used: int, reason_notes: str = "") -> int:
+    """
+    Add special leave usage record.
+    
+    IMPORTANT: Special leave is tracked separately from regular vacation days.
+    - Special leave does NOT reduce regular vacation balance
+    - Special leave entitlements reset annually (no carryover)
+    - Usage is tracked per year based on usage_date
+    
+    Returns the ID of the created record.
+    """
+    cur = conn.execute("""
+        INSERT INTO special_leave_usage (employee_id, special_leave_type_id, usage_date, days_used, reason_notes)
+        VALUES (?, ?, ?, ?, ?)
+    """, (employee_id, special_leave_type_id, usage_date, days_used, reason_notes))
+    
+    record_id = cur.lastrowid
+    conn.commit()
+    return record_id
+
+
+def delete_special_leave_usage(conn: sqlite3.Connection, usage_id: int) -> None:
+    """Delete a special leave usage record by ID."""
+    conn.execute("DELETE FROM special_leave_usage WHERE id = ?", (usage_id,))
+    conn.commit()
+
+
+def update_special_leave_entitlement(conn: sqlite3.Connection, type_id: int, days_entitled: int) -> None:
+    """Update the days entitled for a special leave type."""
+    conn.execute("""
+        UPDATE special_leave_types 
+        SET days_entitled = ?, updated_at = datetime('now')
+        WHERE id = ?
+    """, (days_entitled, type_id))
+    conn.commit()

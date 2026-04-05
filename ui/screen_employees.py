@@ -1,6 +1,7 @@
 """Screen 1: Employee list table + add employee + schedule vacation + link to Screen 3."""
 from PyQt6.QtWidgets import (
     QDialog,
+    QFrame,
     QHeaderView,
     QLabel,
     QMessageBox,
@@ -55,24 +56,51 @@ class EmployeeListScreen(QWidget):
         self._table.itemSelectionChanged.connect(self._update_selection_hint)
         lay.addWidget(self._selection_label)
 
-        btn_lay = QHBoxLayout()
-        self._btn_add = QPushButton()
-        self._btn_add.clicked.connect(self._add_employee)
-        btn_lay.addWidget(self._btn_add)
+        # Employee-oriented buttons section
+        self._employee_label = QLabel()
+        self._employee_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        lay.addWidget(self._employee_label)
+        
+        employee_btn_lay = QHBoxLayout()
         self._btn_schedule = QPushButton()
         self._btn_schedule.clicked.connect(self._schedule_vacation_from_list)
-        btn_lay.addWidget(self._btn_schedule)
+        employee_btn_lay.addWidget(self._btn_schedule)
+        self._btn_special_leaves = QPushButton()
+        self._btn_special_leaves.clicked.connect(self._manage_special_leaves)
+        employee_btn_lay.addWidget(self._btn_special_leaves)
         self._btn_all_schedules = QPushButton()
         self._btn_all_schedules.clicked.connect(self._go_to_all_schedules)
-        btn_lay.addWidget(self._btn_all_schedules)
+        employee_btn_lay.addWidget(self._btn_all_schedules)
+        employee_btn_lay.addStretch()
+        lay.addLayout(employee_btn_lay)
+        
+        # Divider line
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFrameShadow(QFrame.Shadow.Sunken)
+        divider.setStyleSheet("margin: 10px 0px;")
+        lay.addWidget(divider)
+        
+        # Configuration buttons section
+        self._config_label = QLabel()
+        self._config_label.setStyleSheet("font-weight: bold;")
+        lay.addWidget(self._config_label)
+        
+        config_btn_lay = QHBoxLayout()
+        self._btn_add = QPushButton()
+        self._btn_add.clicked.connect(self._add_employee)
+        config_btn_lay.addWidget(self._btn_add)
         self._btn_rollover = QPushButton()
         self._btn_rollover.clicked.connect(self._rollover_year)
-        btn_lay.addWidget(self._btn_rollover)
+        config_btn_lay.addWidget(self._btn_rollover)
         self._btn_holidays = QPushButton()
         self._btn_holidays.clicked.connect(self._manage_holidays)
-        btn_lay.addWidget(self._btn_holidays)
-        btn_lay.addStretch()
-        lay.addLayout(btn_lay)
+        config_btn_lay.addWidget(self._btn_holidays)
+        self._btn_adjust_entitlements = QPushButton()
+        self._btn_adjust_entitlements.clicked.connect(self._adjust_special_leave_entitlements)
+        config_btn_lay.addWidget(self._btn_adjust_entitlements)
+        config_btn_lay.addStretch()
+        lay.addLayout(config_btn_lay)
         self._go_to_all_schedules_callback = None
         self._update_button_text()
         self._update_selection_hint()
@@ -90,10 +118,21 @@ class EmployeeListScreen(QWidget):
     
     def _update_button_text(self):
         """Update button text with translations."""
+        # Employee section label
+        if tr("language") == "Language":  # English
+            self._employee_label.setText("Employee Actions (select an employee first):")
+            self._config_label.setText("Configuration:")
+        else:  # Serbian
+            self._employee_label.setText("Акције за запослене (прво изаберите запосленог):")
+            self._config_label.setText("Конфигурација:")
+        
+        # Button texts
         self._btn_add.setText(tr("add_employee"))
         self._btn_schedule.setText(tr("schedule_vacation"))
         self._btn_all_schedules.setText(tr("all_schedules"))
         self._btn_holidays.setText(tr("holidays_settings"))
+        self._btn_special_leaves.setText(tr("special_leaves"))
+        self._btn_adjust_entitlements.setText(tr("adjust_special_leave_entitlements"))
 
     def set_go_to_all_schedules(self, callback):
         self._go_to_all_schedules_callback = callback
@@ -118,15 +157,21 @@ class EmployeeListScreen(QWidget):
 
     def _update_selection_hint(self):
         sel = self._table.selectionModel().selectedRows()
+        has_selection = bool(sel)
+        
+        # Enable/disable employee-oriented buttons based on selection
+        self._btn_schedule.setEnabled(has_selection)
+        self._btn_special_leaves.setEnabled(has_selection)
+        
         if not sel:
             self._selection_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
             if tr("language") == "Language":  # English
                 self._selection_label.setText(
-                    'No employee selected. Click a row in the table, then use "Schedule vacation / day off".'
+                    'No employee selected. Click a row in the table, then use employee action buttons.'
                 )
             else:  # Serbian
                 self._selection_label.setText(
-                    'Запослени није изабран. Кликните ред у табели, затим користите "Закажи годишњи / одсуство".'
+                    'Запослени није изабран. Кликните ред у табели, затим користите дугмад за акције запослених.'
                 )
             return
         row = sel[0].row()
@@ -138,11 +183,11 @@ class EmployeeListScreen(QWidget):
         self._selection_label.setForegroundRole(QPalette.ColorRole.WindowText)
         if tr("language") == "Language":  # English
             self._selection_label.setText(
-                f"Scheduling will use: {first_item.text()} {last_item.text()} (JMBG {jmbg_item.text()})"
+                f"Selected employee: {first_item.text()} {last_item.text()} (JMBG {jmbg_item.text()})"
             )
         else:  # Serbian
             self._selection_label.setText(
-                f"Закаживање ће користити: {first_item.text()} {last_item.text()} (ЈМБГ {jmbg_item.text()})"
+                f"Изабрани запослени: {first_item.text()} {last_item.text()} (ЈМБГ {jmbg_item.text()})"
             )
 
     def refresh(self):
@@ -223,7 +268,7 @@ class EmployeeListScreen(QWidget):
             eid = insert_employee(
                 conn, data["jmbg"], data["first_name"], data["last_name"],
                 data["contract_type"], data["contract_end_date"], data["religion"],
-                data["start_contract_date"],
+                data["start_contract_date"], data["working_days_per_week"],
             )
             ensure_year_balance(conn, eid, year, data["contract_type"])
             set_days_at_start(conn, eid, year, data["days_at_start"])
@@ -361,9 +406,11 @@ class EmployeeListScreen(QWidget):
                 "Confirm Year Rollover",
                 f"Roll over all active employees from {previous_year} to {current_year}?\n\n"
                 f"This will:\n"
-                f"- Transfer all unused days from {previous_year} to {current_year}\n"
+                f"- Transfer all unused vacation days from {previous_year} to {current_year}\n"
                 f"- Calculate new days at start for {current_year} based on contract end dates\n"
+                f"- RESET special leave entitlements (unused special leave days will be lost)\n"
                 f"- Process all active employees\n\n"
+                f"⚠️ IMPORTANT: Special leave entitlements reset annually and cannot be transferred.\n\n"
                 f"This action cannot be undone.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
@@ -374,9 +421,11 @@ class EmployeeListScreen(QWidget):
                 "Потврдите пренос године",
                 f"Пренети све активне запослене са {previous_year} на {current_year}?\n\n"
                 f"Ово ће:\n"
-                f"- Пренети све неискоришћене дане са {previous_year} на {current_year}\n"
+                f"- Пренети све неискоришћене дане годишњег одмора са {previous_year} на {current_year}\n"
                 f"- Израчунати нове дане на почетку за {current_year} на основу датума истека уговора\n"
+                f"- РЕСЕТОВАТИ права на плаћено одсуство (неискоришћени дани плаћеног одсуства ће бити изгубљени)\n"
                 f"- Обрадити све активне запослене\n\n"
+                f"⚠️ ВАЖНО: Права на плаћено одсуство се ресетују сваке године и не могу се преносити.\n\n"
                 f"Ова акција се не може поништити.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
@@ -415,3 +464,55 @@ class EmployeeListScreen(QWidget):
         dialog = ManageNonWorkingDaysDialog(self, conn)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh()
+    
+    def _manage_special_leaves(self):
+        """Open the special leaves dialog for selected employee."""
+        sel = self._table.selectionModel().selectedRows()
+        if not sel:
+            if tr("language") == "Language":  # English
+                QMessageBox.information(
+                    self,
+                    "Select employee",
+                    "Click a row in the employee table to choose whose special leaves to manage, then try again.",
+                )
+            else:  # Serbian
+                QMessageBox.information(
+                    self,
+                    "Изаберите запосленог",
+                    "Кликните ред у табели запослених да бисте изабрали чија плаћена одсуства да управљате, затим покушајте поново.",
+                )
+            return
+        
+        row = sel[0].row()
+        id_item = self._table.item(row, 0)
+        first_item = self._table.item(row, 1)
+        last_item = self._table.item(row, 2)
+        if id_item is None or first_item is None or last_item is None:
+            return
+        
+        eid = id_item.data(Qt.ItemDataRole.UserRole)
+        if eid is None:
+            return
+        
+        emp_name = f"{first_item.text()} {last_item.text()}"
+        
+        from ui.dialogs import SpecialLeaveDialog
+        conn = self._conn()
+        if not conn:
+            return
+        
+        dialog = SpecialLeaveDialog(self, conn, int(eid), emp_name)
+        dialog.exec()
+    
+    def _adjust_special_leave_entitlements(self):
+        """Open the adjust special leave entitlements dialog."""
+        from ui.dialogs import AdjustSpecialLeaveEntitlementsDialog
+        
+        conn = self._conn()
+        if not conn:
+            return
+        
+        dialog = AdjustSpecialLeaveEntitlementsDialog(self, conn)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # No need to refresh the main screen as entitlements don't affect the employee list
+            pass

@@ -56,11 +56,12 @@ def insert_employee(
     contract_end_date: Optional[str],
     religion: str = 'orthodox',
     start_contract_date: Optional[str] = None,
+    working_days_per_week: int = 6,
 ) -> int:
     cur = conn.execute(
-        """INSERT INTO employees (jmbg, first_name, last_name, contract_type, contract_end_date, religion, start_contract_date, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
-        (jmbg.strip(), first_name.strip(), last_name.strip(), contract_type, contract_end_date or None, religion, start_contract_date or None),
+        """INSERT INTO employees (jmbg, first_name, last_name, contract_type, contract_end_date, religion, start_contract_date, working_days_per_week, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+        (jmbg.strip(), first_name.strip(), last_name.strip(), contract_type, contract_end_date or None, religion, start_contract_date or None, working_days_per_week),
     )
     eid = cur.lastrowid
     conn.execute("UPDATE employees SET updated_at = datetime('now') WHERE id = ?", (eid,))
@@ -74,11 +75,22 @@ def update_employee_contract(
     contract_type: str,
     contract_end_date: Optional[str],
     religion: Optional[str] = None,
+    working_days_per_week: Optional[int] = None,
 ) -> None:
-    if religion:
+    if religion and working_days_per_week:
+        conn.execute(
+            "UPDATE employees SET contract_type = ?, contract_end_date = ?, religion = ?, working_days_per_week = ?, updated_at = datetime('now') WHERE id = ?",
+            (contract_type, contract_end_date or None, religion, working_days_per_week, employee_id),
+        )
+    elif religion:
         conn.execute(
             "UPDATE employees SET contract_type = ?, contract_end_date = ?, religion = ?, updated_at = datetime('now') WHERE id = ?",
             (contract_type, contract_end_date or None, religion, employee_id),
+        )
+    elif working_days_per_week:
+        conn.execute(
+            "UPDATE employees SET contract_type = ?, contract_end_date = ?, working_days_per_week = ?, updated_at = datetime('now') WHERE id = ?",
+            (contract_type, contract_end_date or None, working_days_per_week, employee_id),
         )
     else:
         conn.execute(
@@ -376,13 +388,22 @@ def count_days_in_range(start_date: str, end_date: str) -> int:
 def count_working_days_in_range(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
     """
     Count working days between start and end dates (inclusive).
-    Excludes weekends (Saturday=5, Sunday=6) and non-working days from database.
+    Excludes weekends and non-working days from database based on employee's working schedule.
+    
+    For 5-day work week: Excludes Saturday and Sunday
+    For 6-day work week: Excludes only Sunday
+    
     Filters holidays based on employee's religion:
     - State holidays apply to everyone
     - Orthodox holidays apply only to Orthodox employees
     - Catholic holidays apply only to Catholic employees
     """
     from database import is_non_working_day_for_employee
+    
+    # Get employee's working days per week
+    cur = conn.execute("SELECT working_days_per_week FROM employees WHERE id = ?", (employee_id,))
+    row = cur.fetchone()
+    working_days_per_week = row[0] if row else 6  # Default to 6 for backwards compatibility
     
     s = date.fromisoformat(start_date)
     e = date.fromisoformat(end_date)
@@ -391,8 +412,16 @@ def count_working_days_in_range(conn: sqlite3.Connection, start_date: str, end_d
     current = s
     
     while current <= e:
-        # Check if it's a weekend (Monday=0, Sunday=6)
-        if current.weekday() < 5:  # Monday-Friday
+        # Check if it's a weekend based on employee's working schedule
+        is_weekend = False
+        if working_days_per_week == 5:
+            # 5-day work week: Saturday (5) and Sunday (6) are weekends
+            is_weekend = current.weekday() >= 5
+        else:
+            # 6-day work week: Only Sunday (6) is weekend
+            is_weekend = current.weekday() == 6
+        
+        if not is_weekend:
             # Check if it's a holiday for this employee
             if not is_non_working_day_for_employee(conn, current.isoformat(), employee_id):
                 working_days += 1
@@ -403,11 +432,20 @@ def count_working_days_in_range(conn: sqlite3.Connection, start_date: str, end_d
 
 def count_weekend_days_excluding_holidays(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
     """
-    Count weekend days (Saturday and Sunday) that are NOT public holidays.
+    Count weekend days that are NOT public holidays based on employee's working schedule.
+    
+    For 5-day work week: Counts Saturday and Sunday that are not holidays
+    For 6-day work week: Counts only Sunday that is not a holiday
+    
     When a weekend day is already a public holiday, it should not be counted.
     These days will be deducted from the vacation bucket.
     """
     from database import is_non_working_day_for_employee
+    
+    # Get employee's working days per week
+    cur = conn.execute("SELECT working_days_per_week FROM employees WHERE id = ?", (employee_id,))
+    row = cur.fetchone()
+    working_days_per_week = row[0] if row else 6  # Default to 6 for backwards compatibility
     
     s = date.fromisoformat(start_date)
     e = date.fromisoformat(end_date)
@@ -416,8 +454,16 @@ def count_weekend_days_excluding_holidays(conn: sqlite3.Connection, start_date: 
     current = s
     
     while current <= e:
-        # Check if it's a weekend (Saturday=5, Sunday=6)
-        if current.weekday() >= 5:  # Saturday or Sunday
+        # Check if it's a weekend based on employee's working schedule
+        is_weekend = False
+        if working_days_per_week == 5:
+            # 5-day work week: Saturday (5) and Sunday (6) are weekends
+            is_weekend = current.weekday() >= 5
+        else:
+            # 6-day work week: Only Sunday (6) is weekend
+            is_weekend = current.weekday() == 6
+        
+        if is_weekend:
             # Only count if it's NOT a public holiday
             if not is_non_working_day_for_employee(conn, current.isoformat(), employee_id):
                 weekend_days += 1

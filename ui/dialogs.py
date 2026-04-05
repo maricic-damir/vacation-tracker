@@ -29,6 +29,7 @@ from typing import Optional
 
 from entitlement import prorated_vacation_entitlement_for_year
 from translations import tr
+from database import get_special_leave_types, get_special_leave_balance_for_employee, update_special_leave_entitlement
 
 
 def choose_or_create_db_path(parent: Optional[QWidget]) -> Optional[str]:
@@ -103,6 +104,13 @@ class AddEmployeeDialog(QDialog):
         self.religion = QComboBox()
         self.religion.addItems([tr("orthodox"), tr("catholic")])
         lay.addRow(tr("religion") + ":", self.religion)
+        self.working_days_per_week = QComboBox()
+        if tr("language") == "Language":  # English
+            self.working_days_per_week.addItems(["6 days per week", "5 days per week (Mon-Fri)"])
+        else:  # Serbian
+            self.working_days_per_week.addItems(["6 дана недељно", "5 дана недељно (пон-пет)"])
+        self.working_days_per_week.currentIndexChanged.connect(lambda _: self._update_prorated_label())
+        lay.addRow(tr("working_days_per_week") + ":", self.working_days_per_week)
         self.start_contract_date = QDateEdit()
         self.start_contract_date.setCalendarPopup(True)
         self.start_contract_date.setDate(QDate.currentDate())
@@ -143,16 +151,18 @@ class AddEmployeeDialog(QDialog):
             self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None
         )
         start_date = self.start_contract_date.date().toPyDate()
-        n = prorated_vacation_entitlement_for_year(start_date, end_str)
+        working_days_idx = self.working_days_per_week.currentIndex()
+        working_days_per_week = 6 if working_days_idx == 0 else 5
+        n = prorated_vacation_entitlement_for_year(start_date, end_str, working_days_per_week)
         if tr("language") == "Language":  # English
             self._prorated_label.setText(
                 str(n)
-                + " (based on start contract date, contract type, and end of employment within this year)"
+                + " (based on start contract date, contract type, working days per week, and end of employment within this year)"
             )
         else:  # Serbian
             self._prorated_label.setText(
                 str(n)
-                + " (на основу датума почетка уговора, типа уговора и краја запослења у овој години)"
+                + " (на основу датума почетка уговора, типа уговора, радних дана недељно и краја запослења у овој години)"
             )
 
     def _validate_jmbg(self) -> Optional[str]:
@@ -183,7 +193,9 @@ class AddEmployeeDialog(QDialog):
         contract_type = "fixed_term" if idx == 0 else "open_ended"
         end_date = self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None
         start_date = self.start_contract_date.date().toPyDate()
-        days_at_start = prorated_vacation_entitlement_for_year(start_date, end_date)
+        working_days_idx = self.working_days_per_week.currentIndex()
+        working_days_per_week = 6 if working_days_idx == 0 else 5
+        days_at_start = prorated_vacation_entitlement_for_year(start_date, end_date, working_days_per_week)
         religion_idx = self.religion.currentIndex()
         religion = "orthodox" if religion_idx == 0 else "catholic"
         return {
@@ -191,6 +203,7 @@ class AddEmployeeDialog(QDialog):
             "first_name": self.first_name.text().strip(),
             "last_name": self.last_name.text().strip(),
             "religion": religion,
+            "working_days_per_week": working_days_per_week,
             "contract_type": contract_type,
             "contract_end_date": end_date,
             "start_contract_date": self.start_contract_date.date().toString("yyyy-MM-dd"),
@@ -280,6 +293,7 @@ class ContractDialog(QDialog):
         current_end_date: Optional[str] = None,
         current_days_at_start: int = 0,
         current_religion: str = "orthodox",
+        current_working_days_per_week: int = 6,
     ):
         super().__init__(parent)
         self.setWindowTitle(tr("edit_contract"))
@@ -289,6 +303,14 @@ class ContractDialog(QDialog):
         rel_idx = 0 if current_religion == "orthodox" else 1
         self.religion.setCurrentIndex(rel_idx)
         lay.addRow(tr("religion") + ":", self.religion)
+        self.working_days_per_week = QComboBox()
+        if tr("language") == "Language":  # English
+            self.working_days_per_week.addItems(["6 days per week", "5 days per week (Mon-Fri)"])
+        else:  # Serbian
+            self.working_days_per_week.addItems(["6 дана недељно", "5 дана недељно (пон-пет)"])
+        working_days_idx = 0 if current_working_days_per_week == 6 else 1
+        self.working_days_per_week.setCurrentIndex(working_days_idx)
+        lay.addRow(tr("working_days_per_week") + ":", self.working_days_per_week)
         self.contract_type = QComboBox()
         if tr("language") == "Language":  # English
             self.contract_type.addItems(["Fixed term (with end date)", "Open-ended (no end date)"])
@@ -331,8 +353,10 @@ class ContractDialog(QDialog):
     def get_data(self) -> dict:
         idx = self.contract_type.currentIndex()
         rel_idx = self.religion.currentIndex()
+        working_days_idx = self.working_days_per_week.currentIndex()
         return {
             "religion": "orthodox" if rel_idx == 0 else "catholic",
+            "working_days_per_week": 6 if working_days_idx == 0 else 5,
             "contract_type": "fixed_term" if idx == 0 else "open_ended",
             "contract_end_date": self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None,
             "days_at_start": self.days_at_start.value() if idx == 0 else 0,
@@ -726,3 +750,356 @@ class ManageNonWorkingDaysDialog(QDialog):
                 "Error",
                 f"Failed to save holidays: {str(e)}"
             )
+
+
+# ---------- Special Leave Dialog ----------
+
+
+class SpecialLeaveDialog(QDialog):
+    def __init__(self, parent, conn, employee_id: int, employee_name: str):
+        super().__init__(parent)
+        self._conn = conn
+        self._employee_id = employee_id
+        self._employee_name = employee_name
+        
+        self.setWindowTitle(f"{tr('manage_special_leaves')} - {employee_name}")
+        self.setMinimumSize(800, 600)
+        
+        layout = QVBoxLayout(self)
+        
+        # Important policy notice
+        policy_notice = QLabel()
+        if tr("language") == "Language":  # English
+            policy_notice.setText(
+                "⚠️ IMPORTANT: Special leave entitlements reset annually on January 1st.\n"
+                "Unused special leave days cannot be transferred to the next year and will be lost."
+            )
+        else:  # Serbian
+            policy_notice.setText(
+                "⚠️ ВАЖНО: Права на плаћено одсуство се ресетују сваке године 1. јануара.\n"
+                "Неискоришћени дани плаћеног одсуства се не могу пренети у следећу годину и биће изгубљени."
+            )
+        policy_notice.setWordWrap(True)
+        policy_notice.setStyleSheet("""
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 5px 0 15px 0;
+            color: #856404;
+            font-weight: bold;
+        """)
+        layout.addWidget(policy_notice)
+        
+        # Balance section
+        balance_group = QLabel(tr("special_leave_balance"))
+        balance_group.setStyleSheet("font-weight: bold; font-size: 14px; margin: 10px 0;")
+        layout.addWidget(balance_group)
+        
+        self._balance_table = QTableWidget()
+        self._balance_table.setColumnCount(4)
+        self._balance_table.setHorizontalHeaderLabels([
+            tr("special_leave_type"),
+            tr("entitled"), 
+            tr("used_lowercase"),
+            tr("remaining")
+        ])
+        self._balance_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._balance_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self._balance_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._balance_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self._balance_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._balance_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self._balance_table)
+        
+        # Usage history section
+        history_group = QLabel(tr("used_days_off"))  # Reusing existing translation
+        history_group.setStyleSheet("font-weight: bold; font-size: 14px; margin: 10px 0;")
+        layout.addWidget(history_group)
+        
+        self._usage_table = QTableWidget()
+        self._usage_table.setColumnCount(5)
+        self._usage_table.setHorizontalHeaderLabels([
+            tr("special_leave_type"),
+            tr("usage_date"),
+            tr("days_used"),
+            tr("reason_notes"),
+            ""  # Delete button column
+        ])
+        self._usage_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._usage_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self._usage_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._usage_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._usage_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self._usage_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self._usage_table)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self._add_button = QPushButton(tr("add_special_leave"))
+        self._add_button.clicked.connect(self._add_special_leave)
+        button_layout.addWidget(self._add_button)
+        
+        button_layout.addStretch()
+        
+        self._close_button = QPushButton(tr("close"))
+        self._close_button.clicked.connect(self.accept)
+        button_layout.addWidget(self._close_button)
+        
+        layout.addLayout(button_layout)
+        
+        self._refresh_data()
+    
+    def _refresh_data(self):
+        """Refresh balance and usage tables."""
+        from datetime import date
+        from database import get_special_leave_usage_for_employee
+        
+        current_year = date.today().year
+        
+        # Refresh balance table
+        balances = get_special_leave_balance_for_employee(self._conn, self._employee_id, current_year)
+        
+        self._balance_table.setRowCount(len(balances))
+        for i, (type_id, balance) in enumerate(balances.items()):
+            # Use Serbian names if current language is Serbian
+            type_name = balance['type_name_sr'] if tr("language") != "Language" else balance['type_name_en']
+            
+            self._balance_table.setItem(i, 0, QTableWidgetItem(type_name))
+            self._balance_table.setItem(i, 1, QTableWidgetItem(str(balance['entitled'])))
+            self._balance_table.setItem(i, 2, QTableWidgetItem(str(balance['used'])))
+            self._balance_table.setItem(i, 3, QTableWidgetItem(str(balance['remaining'])))
+            
+            # Store type_id for later use
+            self._balance_table.item(i, 0).setData(Qt.ItemDataRole.UserRole, type_id)
+        
+        # Refresh usage table
+        usage_records = get_special_leave_usage_for_employee(self._conn, self._employee_id, current_year)
+        
+        self._usage_table.setRowCount(len(usage_records))
+        for i, record in enumerate(usage_records):
+            # Use Serbian names if current language is Serbian
+            type_name = record['type_name_sr'] if tr("language") != "Language" else record['type_name_en']
+            
+            self._usage_table.setItem(i, 0, QTableWidgetItem(type_name))
+            self._usage_table.setItem(i, 1, QTableWidgetItem(record['usage_date']))
+            self._usage_table.setItem(i, 2, QTableWidgetItem(str(record['days_used'])))
+            self._usage_table.setItem(i, 3, QTableWidgetItem(record['reason_notes'] or ""))
+            
+            # Delete button
+            delete_btn = QPushButton("🗑")
+            delete_btn.setMaximumWidth(30)
+            delete_btn.clicked.connect(lambda checked, record_id=record['id']: self._delete_usage(record_id))
+            self._usage_table.setCellWidget(i, 4, delete_btn)
+    
+    def _add_special_leave(self):
+        """Open dialog to add new special leave usage."""
+        dialog = AddSpecialLeaveUsageDialog(self, self._conn, self._employee_id)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._refresh_data()
+    
+    def _delete_usage(self, usage_id: int):
+        """Delete a special leave usage record."""
+        reply = QMessageBox.question(
+            self,
+            tr("confirm"),  # Reusing existing translation
+            "Delete this special leave usage record?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                from database import delete_special_leave_usage
+                delete_special_leave_usage(self._conn, usage_id)
+                self._refresh_data()
+            except Exception as e:
+                QMessageBox.critical(self, tr("error"), str(e))
+
+
+class AddSpecialLeaveUsageDialog(QDialog):
+    def __init__(self, parent, conn, employee_id: int):
+        super().__init__(parent)
+        self._conn = conn
+        self._employee_id = employee_id
+        
+        self.setWindowTitle(tr("add_special_leave"))
+        
+        layout = QFormLayout(self)
+        
+        # Special leave type selector
+        self._type_combo = QComboBox()
+        self._populate_leave_types()
+        layout.addRow(tr("special_leave_type") + ":", self._type_combo)
+        
+        # Usage date
+        self._usage_date = QDateEdit()
+        self._usage_date.setCalendarPopup(True)
+        self._usage_date.setDate(QDate.currentDate())
+        layout.addRow(tr("usage_date") + ":", self._usage_date)
+        
+        # Days used
+        self._days_used = QSpinBox()
+        self._days_used.setMinimum(1)
+        self._days_used.setMaximum(30)
+        self._days_used.setValue(1)
+        layout.addRow(tr("days_used") + ":", self._days_used)
+        
+        # Reason/notes
+        self._reason_notes = QPlainTextEdit()
+        self._reason_notes.setMaximumHeight(80)
+        layout.addRow(tr("reason_notes") + ":", self._reason_notes)
+        
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+    
+    def _populate_leave_types(self):
+        """Populate the leave type combo box."""
+        leave_types = get_special_leave_types(self._conn)
+        
+        for leave_type in leave_types:
+            # Use Serbian names if current language is Serbian
+            display_name = leave_type['name_sr'] if tr("language") != "Language" else leave_type['name_en']
+            self._type_combo.addItem(display_name, leave_type['id'])
+    
+    def _on_accept(self):
+        """Validate and save the special leave usage."""
+        from datetime import date
+        from database import add_special_leave_usage, get_special_leave_balance_for_employee
+        
+        type_id = self._type_combo.currentData()
+        usage_date = self._usage_date.date().toString("yyyy-MM-dd")
+        days_used = self._days_used.value()
+        reason_notes = self._reason_notes.toPlainText().strip()
+        
+        # Check if employee has enough remaining days
+        usage_year = self._usage_date.date().year()
+        balances = get_special_leave_balance_for_employee(self._conn, self._employee_id, usage_year)
+        
+        if type_id in balances:
+            remaining = balances[type_id]['remaining']
+            if days_used > remaining:
+                QMessageBox.warning(
+                    self,
+                    tr("insufficient_special_leave"),
+                    f"Cannot use {days_used} days. Only {remaining} days remaining for this leave type."
+                )
+                return
+        
+        try:
+            add_special_leave_usage(self._conn, self._employee_id, type_id, usage_date, days_used, reason_notes)
+            QMessageBox.information(self, tr("success"), tr("special_leave_added"))  # Reusing existing translation
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, tr("error"), str(e))
+
+
+class AdjustSpecialLeaveEntitlementsDialog(QDialog):
+    def __init__(self, parent, conn):
+        super().__init__(parent)
+        self._conn = conn
+        
+        self.setWindowTitle(tr("adjust_special_leave_entitlements"))
+        self.setMinimumSize(600, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Instructions
+        instructions = QLabel("Adjust the number of days entitled for each special leave type:")
+        if tr("language") != "Language":  # Serbian
+            instructions.setText("Подесите број дана на које запослени има право за сваку врсту плаћеног одсуства:")
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("margin-bottom: 10px;")
+        layout.addWidget(instructions)
+        
+        # Policy reminder
+        policy_reminder = QLabel()
+        if tr("language") == "Language":  # English
+            policy_reminder.setText(
+                "📅 Reminder: Special leave entitlements reset annually. "
+                "Unused days are not transferred between years."
+            )
+        else:  # Serbian
+            policy_reminder.setText(
+                "📅 Подсетник: Права на плаћено одсуство се ресетују сваке године. "
+                "Неискоришћени дани се не преносе између година."
+            )
+        policy_reminder.setWordWrap(True)
+        policy_reminder.setStyleSheet("""
+            background-color: #e3f2fd;
+            border: 1px solid #90caf9;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 5px 0 10px 0;
+            color: #1565c0;
+            font-style: italic;
+        """)
+        layout.addWidget(policy_reminder)
+        
+        # Table for editing entitlements
+        self._table = QTableWidget()
+        self._table.setColumnCount(3)
+        self._table.setHorizontalHeaderLabels([
+            tr("special_leave_type"),
+            tr("days_entitled"),
+            ""  # Save button column
+        ])
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self._table)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        self._close_button = QPushButton(tr("close"))
+        self._close_button.clicked.connect(self.accept)
+        button_layout.addWidget(self._close_button)
+        
+        layout.addLayout(button_layout)
+        
+        self._populate_table()
+    
+    def _populate_table(self):
+        """Populate the table with current special leave types and entitlements."""
+        leave_types = get_special_leave_types(self._conn)
+        
+        self._table.setRowCount(len(leave_types))
+        for i, leave_type in enumerate(leave_types):
+            # Use Serbian names if current language is Serbian
+            type_name = leave_type['name_sr'] if tr("language") != "Language" else leave_type['name_en']
+            
+            # Type name (read-only)
+            name_item = QTableWidgetItem(type_name)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._table.setItem(i, 0, name_item)
+            
+            # Days entitled (editable via spinbox)
+            days_spinbox = QSpinBox()
+            days_spinbox.setMinimum(0)
+            days_spinbox.setMaximum(365)
+            days_spinbox.setValue(leave_type['days_entitled'])
+            self._table.setCellWidget(i, 1, days_spinbox)
+            
+            # Update button
+            update_btn = QPushButton(tr("save"))
+            update_btn.clicked.connect(
+                lambda checked, type_id=leave_type['id'], spinbox=days_spinbox: 
+                self._update_entitlement(type_id, spinbox.value())
+            )
+            self._table.setCellWidget(i, 2, update_btn)
+    
+    def _update_entitlement(self, type_id: int, new_days: int):
+        """Update the entitlement for a specific leave type."""
+        try:
+            update_special_leave_entitlement(self._conn, type_id, new_days)
+            QMessageBox.information(self, tr("success"), tr("entitlements_updated"))
+        except Exception as e:
+            QMessageBox.critical(self, tr("error"), str(e))
