@@ -31,32 +31,10 @@ from ui.dialogs import (
 from translations import tr
 
 
-# Details + Year balance form rows — one shared label column width.
-_FORM_ROW_LABELS = (
-    "JMBG:",
-    "First name:",
-    "Last name:",
-    "Contract start date:",
-    "Contract end date:",
-    "Status:",
-    "Days at start:",
-    "Transferred:",
-    "Earned:",
-    "Used:",
-    "Left:",
-)
-
-
-def _form_label_column_width(font) -> int:
-    fm = QFontMetrics(font)
-    w = max(fm.horizontalAdvance(s) for s in _FORM_ROW_LABELS)
-    return w + 12
-
-
-def _form_row_label(text: str, column_width: int) -> QLabel:
+def _form_row_label(text: str) -> QLabel:
     lab = QLabel(text)
     lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-    lab.setFixedWidth(column_width)
+    lab.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
     return lab
 
 
@@ -154,14 +132,16 @@ class EmployeeDetailScreen(QWidget):
         header.addWidget(self._btn_back, 0)
         lay.addLayout(header)
 
-        # Details (left) + current-year balance (right)
+        # Details (left) + current-year balance (right) — same visual height (shared row height).
         details_row = QHBoxLayout()
         self._props_group = QGroupBox("Details")
+        self._props_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._props_layout = QFormLayout(self._props_group)
         _configure_form_columns(self._props_layout)
-        details_row.addWidget(self._props_group, 1, Qt.AlignmentFlag.AlignTop)
+        details_row.addWidget(self._props_group, 1)
 
         self._balance_group = QGroupBox("")
+        self._balance_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._balance_form = QFormLayout(self._balance_group)
         _configure_balance_form(self._balance_form)
         fm = QFontMetrics(self.font())
@@ -173,14 +153,17 @@ class EmployeeDetailScreen(QWidget):
         self._bal_earned = _balance_numeric_label("—", bal_val_w)
         self._bal_used = _balance_numeric_label("—", bal_val_w)
         self._bal_left = _balance_numeric_label("—", bal_val_w)
-        lw = _form_label_column_width(self.font())
-        self._form_label_w = lw
-        self._balance_form.addRow(_form_row_label("Days at start:", lw), self._bal_days_start)
-        self._balance_form.addRow(_form_row_label("Transferred:", lw), transferred_wrap)
-        self._balance_form.addRow(_form_row_label("Earned:", lw), self._bal_earned)
-        self._balance_form.addRow(_form_row_label("Used:", lw), self._bal_used)
-        self._balance_form.addRow(_form_row_label("Left:", lw), self._bal_left)
-        details_row.addWidget(self._balance_group, 1, Qt.AlignmentFlag.AlignTop)
+        self._bal_lbl_days_start = _form_row_label(tr("days_at_start") + ":")
+        self._bal_lbl_transferred = _form_row_label(tr("transferred") + ":")
+        self._bal_lbl_earned = _form_row_label(tr("earned") + ":")
+        self._bal_lbl_used = _form_row_label(tr("used") + ":")
+        self._bal_lbl_left = _form_row_label(tr("left") + ":")
+        self._balance_form.addRow(self._bal_lbl_days_start, self._bal_days_start)
+        self._balance_form.addRow(self._bal_lbl_transferred, transferred_wrap)
+        self._balance_form.addRow(self._bal_lbl_earned, self._bal_earned)
+        self._balance_form.addRow(self._bal_lbl_used, self._bal_used)
+        self._balance_form.addRow(self._bal_lbl_left, self._bal_left)
+        details_row.addWidget(self._balance_group, 1)
         lay.addLayout(details_row)
 
         # Used days off table
@@ -272,6 +255,12 @@ class EmployeeDetailScreen(QWidget):
             tr("date_earned"), tr("days"), tr("reason_notes"), tr("created")
         ])
 
+        self._bal_lbl_days_start.setText(tr("days_at_start") + ":")
+        self._bal_lbl_transferred.setText(tr("transferred") + ":")
+        self._bal_lbl_earned.setText(tr("earned") + ":")
+        self._bal_lbl_used.setText(tr("used") + ":")
+        self._bal_lbl_left.setText(tr("left") + ":")
+
     def _load(self):
         conn = self._conn()
         if not conn or not self._employee_id:
@@ -295,22 +284,21 @@ class EmployeeDetailScreen(QWidget):
         # Clear and fill props
         while self._props_layout.rowCount():
             self._props_layout.removeRow(0)
-        lw = self._form_label_w
         self._props_layout.addRow(
-            _form_row_label(tr("jmbg") + ":", lw), _form_value_label(emp.get("jmbg", ""), expand_field=True)
+            _form_row_label(tr("jmbg") + ":"), _form_value_label(emp.get("jmbg", ""), expand_field=True)
         )
         self._props_layout.addRow(
-            _form_row_label(tr("first_name") + ":", lw), _form_value_label(emp.get("first_name", ""), expand_field=True)
+            _form_row_label(tr("first_name") + ":"), _form_value_label(emp.get("first_name", ""), expand_field=True)
         )
         self._props_layout.addRow(
-            _form_row_label(tr("last_name") + ":", lw), _form_value_label(emp.get("last_name", ""), expand_field=True)
+            _form_row_label(tr("last_name") + ":"), _form_value_label(emp.get("last_name", ""), expand_field=True)
         )
         
         # Contract start date
         start_date = emp.get("start_contract_date", "")
         self._props_layout.addRow(
-            _form_row_label(tr("contract_start_date") + ":", lw), 
-            _form_value_label(start_date if start_date else "-", expand_field=True)
+            _form_row_label(tr("contract_start_date") + ":"),
+            _form_value_label(start_date if start_date else "-", expand_field=True),
         )
         
         # Contract end date
@@ -318,11 +306,11 @@ class EmployeeDetailScreen(QWidget):
         if emp.get("contract_end_date"):
             ct += f" ({tr('until')} {emp['contract_end_date']})"
         self._props_layout.addRow(
-            _form_row_label(tr("contract_end_date") + ":", lw), _form_value_label(ct, word_wrap=True, expand_field=True)
+            _form_row_label(tr("contract_end_date") + ":"), _form_value_label(ct, word_wrap=True, expand_field=True)
         )
         
         self._props_layout.addRow(
-            _form_row_label(tr("status") + ":", lw),
+            _form_row_label(tr("status") + ":"),
             _form_value_label(tr("active") if emp.get("is_active") else tr("archived"), expand_field=True),
         )
         
@@ -333,7 +321,7 @@ class EmployeeDetailScreen(QWidget):
         else:  # Serbian
             working_days_text = f"{working_days} дана недељно" + (" (пон-пет)" if working_days == 5 else "")
         self._props_layout.addRow(
-            _form_row_label(tr("working_days_per_week") + ":", lw),
+            _form_row_label(tr("working_days_per_week") + ":"),
             _form_value_label(working_days_text, expand_field=True),
         )
 
