@@ -6,11 +6,12 @@
 3. [First Run Configuration](#first-run-configuration)
 4. [User Interface Overview](#user-interface-overview)
 5. [Managing Employees](#managing-employees)
-6. [Managing Vacation Days](#managing-vacation-days)
-7. [Holiday Management](#holiday-management)
-8. [Business Rules and Calculations](#business-rules-and-calculations)
-9. [Reports and Printing](#reports-and-printing)
-10. [Troubleshooting](#troubleshooting)
+6. [Working Days Configuration](#working-days-configuration)
+7. [Managing Vacation Days](#managing-vacation-days)
+8. [Holiday Management](#holiday-management)
+9. [Business Rules and Calculations](#business-rules-and-calculations)
+10. [Reports and Printing](#reports-and-printing)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -20,7 +21,9 @@
 
 ### Key Features
 - Track vacation days for multiple employees
-- Automatic calculation of working days (excludes weekends and holidays)
+- **Flexible work schedules**: Support for 5-day (Mon-Fri) and 6-day work weeks
+- **Smart vacation calculations**: Automatic calculation of working days (excludes appropriate weekends and holidays)
+- **Correct vacation entitlements**: 20 days for 5-day workers, 24 days for 6-day workers
 - Support for different contract types (fixed-term and open-ended)
 - Religion-based holiday filtering (Orthodox and Catholic)
 - Automatic year-end rollover of unused vacation days
@@ -182,9 +185,12 @@ Shows all vacation records across all employees.
 3. Click **Save**
 
 **Important Notes:**
-- Open-ended contracts automatically receive 24 vacation days at the start of each calendar year (Serbian law)
+- Open-ended contracts automatically receive vacation days at the start of each calendar year:
+  - **20 days** for 5-day work week employees
+  - **24 days** for 6-day work week employees
 - Fixed-term contracts start with 0 days and must be manually configured
 - Religion setting determines which religious holidays count as non-working days
+- Working days per week setting affects both vacation entitlement and weekend calculations
 
 ### Editing Employee Contract Information
 
@@ -198,7 +204,8 @@ Shows all vacation records across all employees.
 4. Click **Save**
 
 **Effect of Changes:**
-- Changing from fixed-term to open-ended will grant 24 days for the current year
+- Changing from fixed-term to open-ended will grant vacation days for the current year (20 or 24 days based on work schedule)
+- Changing working days per week will recalculate vacation entitlement for the current year
 - Changing religion will recalculate existing vacation records based on the new holiday set
 
 ### Archiving Employees
@@ -209,6 +216,64 @@ Currently, employees cannot be deleted from the system (to preserve historical r
 
 ---
 
+## Working Days Configuration
+
+### Understanding Work Schedules
+
+The application supports two types of work schedules that affect vacation calculations:
+
+#### 5-Day Work Week (Monday-Friday)
+- **Modern office schedule**
+- **Vacation entitlement**: 20 days per year for open-ended contracts
+- **Weekends**: Saturday and Sunday are non-working days (never deducted from vacation)
+- **Best for**: Office workers, remote workers, modern businesses
+
+#### 6-Day Work Week (Monday-Saturday)  
+- **Traditional schedule**
+- **Vacation entitlement**: 24 days per year for open-ended contracts
+- **Weekends**: Only Sunday is a non-working day (Saturday is a working day)
+- **Best for**: Retail, manufacturing, traditional businesses
+
+### Setting Work Schedule for New Employees
+
+When adding a new employee:
+
+1. Fill in the basic information (JMBG, name, etc.)
+2. Look for **"Working days per week"** dropdown
+3. Select:
+   - **5 days per week** for Monday-Friday workers
+   - **6 days per week** for Monday-Saturday workers
+4. The system automatically sets the correct vacation entitlement
+
+### Changing Work Schedule for Existing Employees
+
+1. Open the employee's detail screen (double-click from list)
+2. Click **"Contract Date / Type"**
+3. Find **"Working days per week"** dropdown
+4. Change from 5 to 6 days (or vice versa)
+5. Click **Save**
+
+**What happens when you change the schedule:**
+- Vacation entitlement is automatically recalculated for the current year
+- Future vacation calculations use the new weekend rules
+- Existing vacation records remain unchanged
+
+### Impact on Vacation Calculations
+
+The work schedule affects how vacation days are calculated:
+
+**Example: Employee requests Saturday-Sunday off**
+
+- **5-day worker**: 0 days deducted (both are weekends)
+- **6-day worker**: 1 day deducted (Saturday is a working day, Sunday is weekend)
+
+**Example: Employee requests Monday-Friday off (5 working days, no holidays)**
+
+- **5-day worker**: 5 days deducted
+- **6-day worker**: 5 days deducted (same result)
+
+---
+
 ## Managing Vacation Days
 
 ### Understanding Day Types
@@ -216,8 +281,9 @@ Currently, employees cannot be deleted from the system (to preserve historical r
 The application tracks three types of vacation days:
 
 1. **Days at Start**
-   - Allocated at the beginning of each year
-   - 24 days for open-ended contracts
+   - Allocated at the beginning of each year based on work schedule:
+     - **20 days** for 5-day work week employees (open-ended contracts)
+     - **24 days** for 6-day work week employees (open-ended contracts)
    - 0 days for fixed-term contracts (unless manually set)
 
 2. **Transferred Days**
@@ -252,21 +318,34 @@ This ensures transferred days are used before they expire in June.
 
 **What Happens:**
 - The application calculates working days between start and end dates
-- Weekends (Saturday/Sunday) are automatically excluded
+- Weekends are automatically handled based on employee's work schedule:
+  - **5-day workers**: Saturday and Sunday are excluded (not deducted)
+  - **6-day workers**: Only Sunday is excluded (Saturday is deducted if requested)
 - Public holidays are automatically excluded (based on employee's religion)
 - Days are deducted according to priority order
 - If start date is in the past, you'll see a warning (vacation is immediately marked as completed)
 
-**Example:**
-Employee books vacation from Monday, Jan 13, 2026 to Friday, Jan 17, 2026:
+**Examples:**
+
+**Example 1: 5-Day Worker books Monday-Friday (Jan 13-17, 2026)**
 - Total calendar days: 5
 - Working days: 5 (no weekends or holidays in this range)
 - Days deducted: 5 working days
 
-If the same period included a public holiday (e.g., Jan 15 is a holiday):
-- Total calendar days: 5
+**Example 2: 6-Day Worker books Monday-Saturday (Jan 13-18, 2026)**
+- Total calendar days: 6
+- Working days: 6 (Saturday is a working day for 6-day workers)
+- Days deducted: 6 working days
+
+**Example 3: 5-Day Worker books Saturday-Sunday**
+- Total calendar days: 2
+- Working days: 0 (both are weekends for 5-day workers)
+- Days deducted: 0 working days
+
+**Example 4: If a period includes a public holiday (e.g., Jan 15 is a holiday)**
+- Total calendar days: 5 (Jan 13-17)
 - Working days: 4 (excluding Jan 15 holiday)
-- Days deducted: 4 working days
+- Days deducted: 4 working days (same for both 5-day and 6-day workers)
 
 ### Adding Earned Days
 
@@ -317,11 +396,13 @@ You don't need to do anything - this happens automatically!
 
 ### Understanding Working Days
 
-**Vacation days now count only working days!**
+**Vacation days count working days based on employee's work schedule!**
 
-The application automatically excludes:
-- **Weekends:** Saturday and Sunday are NEVER counted
-- **Public Holidays:** Serbian state and religious holidays
+The application automatically handles:
+- **Weekends:** Excluded based on work schedule
+  - **5-day workers**: Saturday and Sunday are never counted
+  - **6-day workers**: Only Sunday is never counted (Saturday counts as working day)
+- **Public Holidays:** Serbian state and religious holidays are never counted
 
 ### Loading Public Holidays
 
@@ -339,12 +420,11 @@ The application automatically excludes:
 - Orthodox holidays (apply to Orthodox employees)
 - Catholic holidays (apply to Catholic employees)
 
-For 2026, this includes approximately 17 holidays:
+For 2026, this includes 13 official Serbian holidays:
 - New Year: Jan 1-2 (state)
 - Orthodox Christmas: Jan 7 (Orthodox only)
 - Statehood Day: Feb 15-17 (state)
 - Orthodox Easter: Apr 10-13 (Orthodox only)
-- Catholic Easter: Apr 3-6 (Catholic only)
 - Labour Day: May 1-2 (state)
 - Armistice Day: Nov 11 (state)
 
@@ -369,12 +449,18 @@ If you need to add a holiday that isn't in the official list:
 - **Catholic holidays:** Only apply to employees marked as Catholic
 
 **Example:**
-Orthodox Christmas (Jan 7) is a non-working day:
-- For **Orthodox** employee: Jan 7 is excluded from vacation day count
-- For **Catholic** employee: Jan 7 is a regular working day (counts toward vacation)
+Orthodox Christmas (Jan 7) falls on a Tuesday:
+
+**For Orthodox Employee:**
+- Jan 7 is excluded from vacation day count (religious holiday)
+- If booking Jan 6-8: Only Jan 6 and Jan 8 count as working days (2 days deducted)
+
+**For Catholic Employee:**
+- Jan 7 is a regular working day
+- If booking Jan 6-8: All three days count as working days (3 days deducted)
 
 **Why This Matters:**
-This ensures fair treatment according to Serbian labor law, which respects religious holidays for each faith.
+This ensures fair treatment according to Serbian labor law, which respects religious holidays for each faith while maintaining accurate work schedule calculations.
 
 ### Clearing Holidays
 
@@ -409,7 +495,9 @@ The application handles many calculations automatically:
 #### 1. Working Days Calculation
 When a vacation is scheduled:
 - Count all calendar days between start and end dates (inclusive)
-- Exclude weekends (Saturday/Sunday)
+- Exclude weekends based on employee's work schedule:
+  - **5-day workers**: Exclude Saturday and Sunday
+  - **6-day workers**: Exclude only Sunday (Saturday is a working day)
 - Exclude public holidays (based on employee's religion)
 - Result = actual working days to deduct
 
@@ -429,7 +517,9 @@ After June 30:
 
 #### 4. Open-Ended Contract Allocation
 On January 1 of each year:
-- Open-ended contracts automatically receive 24 days
+- Open-ended contracts automatically receive vacation days based on work schedule:
+  - **20 days** for 5-day work week employees
+  - **24 days** for 6-day work week employees
 - This is done during the year rollover process
 - No manual intervention needed
 
@@ -437,12 +527,17 @@ On January 1 of each year:
 
 If an employee starts mid-year with an open-ended contract:
 
-**Example:** Employee starts on July 1, 2026
+**Example:** 6-day worker starts on July 1, 2026
 - Full year entitlement: 24 days
 - Prorated for 6 months (July-December): 12 days
-- Application automatically calculates this based on start date
+- Application automatically calculates this based on start date and work schedule
 
-**Formula:** `(24 days × months remaining) ÷ 12`
+**Example:** 5-day worker starts on July 1, 2026
+- Full year entitlement: 20 days
+- Prorated for 6 months (July-December): 10 days
+
+**Formula:** `(full_year_entitlement × months remaining) ÷ 12`
+Where full_year_entitlement is 20 days (5-day workers) or 24 days (6-day workers)
 
 ### Past Date Handling
 
@@ -515,13 +610,15 @@ Click **All Schedules** from the employee list:
 **Possible Causes:**
 - Holidays not loaded for the year → Load holidays first
 - Wrong religion set for employee → Check employee's religion setting
-- Calculation includes weekends → This shouldn't happen; check dates
+- Wrong work schedule set for employee → Check working days per week setting
+- Weekend calculation doesn't match expectations → Verify employee's work schedule (5-day vs 6-day)
 - Transferred days expired after June → This is expected behavior
 
 **Solution:**
 - Verify holidays are loaded: Click "Holidays / Settings" and check for your year
 - Verify employee religion matches their actual faith
-- Remember: Only working days are counted (not calendar days)
+- Verify employee work schedule (5-day or 6-day work week)
+- Remember: Working days calculation depends on employee's work schedule
 
 #### 3. Application Won't Start
 
@@ -609,10 +706,13 @@ You can use any SQLite browser to inspect the database if needed.
 
 ## Version Information
 
-**Current Version:** 1.0
+**Current Version:** 2.0
 
-**Changelog:**
-- Working days calculation (excludes weekends and holidays)
+**Latest Features:**
+- **Flexible work schedules**: Support for 5-day (Mon-Fri) and 6-day work weeks
+- **Smart vacation entitlements**: 20 days for 5-day workers, 24 days for 6-day workers
+- **Improved weekend handling**: Weekend deduction based on employee work schedule
+- Working days calculation (excludes appropriate weekends and holidays)
 - Religion-based holiday filtering (Orthodox/Catholic)
 - Deduction tracking (shows which bucket days came from)
 - Bilingual support (English/Serbian)
@@ -640,6 +740,7 @@ This application is provided as-is for tracking vacation days in accordance with
 1. Run application → Choose database location (OneDrive recommended)
 2. Click "Holidays / Settings" → Select year → "Fetch from Ministry Website" → Save
 3. Add employees via "Add Employee" button
+4. **Important**: Set working days per week (5 or 6 days) for each employee
 
 ### Daily Use
 1. **Schedule vacation:** Double-click employee → "Schedule Vacation" → Enter dates → Save
@@ -653,6 +754,7 @@ This application is provided as-is for tracking vacation days in accordance with
 
 ### Common Tasks
 - **Change contract:** Employee detail → "Contract Date / Type"
+- **Change work schedule:** Employee detail → "Contract Date / Type" → Working days per week
 - **View all vacations:** "All Schedules" button
 - **Print report:** Employee detail → "Print" button
 - **Switch language:** Top-right corner dropdown
