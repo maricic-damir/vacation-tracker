@@ -133,7 +133,7 @@ Opens when you double-click an employee from the list.
 - **Employee Details:** JMBG, name, contract information, religion
 - **Year Balance Table:** Shows vacation day breakdown for the current year
   - Days at Start: Initial allocation for the year (20 for open-ended contracts)
-  - Transferred: Days carried over from previous year (valid until June only)
+  - Transferred: Days carried over from previous year (valid until end of year only)
   - Earned: Additional days earned (blood donation, overtime, etc.)
   - Used: Total days taken
   - Left: Remaining days available
@@ -288,8 +288,8 @@ The application tracks three types of vacation days:
 
 2. **Transferred Days**
    - Unused days from previous year
-   - **Important:** Only valid until June 30 of the current year
-   - After June, transferred days are no longer counted in "Days Left"
+   - **Important:** Only valid until December 31 of the current year
+   - After December 31, transferred days are no longer counted in "Days Left"
 
 3. **Earned Days**
    - Extra days earned during the year
@@ -304,7 +304,7 @@ When an employee takes vacation, days are deducted in this order:
 2. **Second:** Days at start (this year's allocation)
 3. **Third:** Earned days (blood donation, etc.)
 
-This ensures transferred days are used before they expire in June.
+This ensures transferred days are used before they expire at the end of the year.
 
 ### Scheduling a Vacation
 
@@ -377,8 +377,8 @@ At the beginning of each year, you may need to set how many days an employee is 
 
 **Important:**
 - This should be done early in the year (January)
-- Transferred days are only valid until June 30
-- After June, these days no longer count in the "Days Left" calculation
+- Transferred days are only valid until December 31
+- After December 31, these days no longer count in the "Days Left" calculation
 
 ### Automatic Completion of Vacations
 
@@ -510,10 +510,10 @@ Days are deducted in this order:
 This is visible in the employee detail screen's "Used Days Off" table.
 
 #### 3. Transferred Days Expiration
-After June 30:
+After December 31:
 - Transferred days are no longer included in "Days Left" calculation
 - They still appear in the balance table for reference
-- Employees should be encouraged to use transferred days before June
+- Employees should be encouraged to use transferred days before the end of the year
 
 #### 4. Open-Ended Contract Allocation
 On January 1 of each year:
@@ -612,7 +612,7 @@ Click **All Schedules** from the employee list:
 - Wrong religion set for employee → Check employee's religion setting
 - Wrong work schedule set for employee → Check working days per week setting
 - Weekend calculation doesn't match expectations → Verify employee's work schedule (5-day vs 6-day)
-- Transferred days expired after June → This is expected behavior
+- Transferred days expired after December 31 → This is expected behavior
 
 **Solution:**
 - Verify holidays are loaded: Click "Holidays / Settings" and check for your year
@@ -662,7 +662,7 @@ Click **All Schedules** from the employee list:
 
 3. **Year-End Process:**
    - In late December, prepare for year rollover
-   - Remind employees to use transferred days before June
+   - Remind employees to use transferred days before the end of the year
    - Load holidays for the new year in early January
 
 4. **Data Entry:**

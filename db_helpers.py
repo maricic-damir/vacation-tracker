@@ -108,7 +108,7 @@ def set_employee_active(conn: sqlite3.Connection, employee_id: int, is_active: b
     conn.commit()
 
 
-# ---------- Balance (transferred only until June) ----------
+# ---------- Balance (transferred until end of year) ----------
 
 
 def calculate_deduction_breakdown(
@@ -184,7 +184,7 @@ def get_available_days_for_deduction(
 
 
 def total_vacation_left(conn: sqlite3.Connection, employee_id: int, year: int) -> int:
-    """(days_at_start + (transferred if month<=6 else 0) + earned) - used."""
+    """(days_at_start + (transferred if before end of year else 0) + earned) - used."""
     cur = conn.execute(
         "SELECT days_at_start, days_transferred FROM employee_year_balance WHERE employee_id = ? AND year = ?",
         (employee_id, year),
@@ -193,7 +193,8 @@ def total_vacation_left(conn: sqlite3.Connection, employee_id: int, year: int) -
     at_start = row[0] if row else 0
     transferred = row[1] if row else 0
     today = date.today()
-    if today.month > 6:
+    # Transferred days are valid until December 31 of the year they belong to
+    if today > date(year, 12, 31):
         transferred = 0
     cur = conn.execute(
         "SELECT COALESCE(SUM(number_of_days), 0) FROM earned_days WHERE employee_id = ? AND strftime('%Y', earned_date) = ?",
@@ -291,7 +292,9 @@ def get_year_balance(conn: sqlite3.Connection, employee_id: int, year: int) -> d
     at_start_left = max(0, at_start - used_at_start)
     earned_left = max(0, earned - used_earned)
     
-    if date.today().month > 6:
+    # Transferred days are valid until December 31 of the year they belong to
+    today = date.today()
+    if today > date(year, 12, 31):
         days_left = at_start_left + earned_left
     else:
         days_left = transferred_left + at_start_left + earned_left

@@ -341,7 +341,9 @@ class EmployeeDetailScreen(QWidget):
         self._balance_group.setTitle(f"{tr('year')} {year}")
         self._bal_days_start.setText(f"{balance['days_at_start']} ({balance['at_start_left']} {tr('left')})")
         self._bal_transferred_num.setText(f"{balance['days_transferred']} ({balance['transferred_left']} {tr('left')})")
-        if date.today().month > 6:
+        # Show note if transferred days have expired (after December 31 of their year)
+        today = date.today()
+        if today > date(year, 12, 31):
             self._bal_transferred_note.setText(tr("transferred_note"))
             self._bal_transferred_note.show()
         else:

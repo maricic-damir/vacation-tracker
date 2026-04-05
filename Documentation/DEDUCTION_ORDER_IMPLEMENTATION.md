@@ -72,7 +72,7 @@ All edge cases tested:
 - ✓ Deducting only from transferred days
 - ✓ Deducting across buckets (transferred → at_start)
 - ✓ Deducting across all three buckets (transferred → at_start → earned)
-- ✓ Transferred days after June (correctly excluded from available balance)
+- ✓ Transferred days after December 31 (correctly excluded from available balance)
 - ✓ Year rollover with per-bucket tracking
 
 ## Files Modified
@@ -95,4 +95,4 @@ The system now automatically:
 1. Tracks which bucket days come from when vacations are completed
 2. Shows remaining days per bucket in the UI
 3. Deducts in the correct priority order
-4. Preserves historical records even after June (when transferred days expire from available balance)
+4. Preserves historical records even after December 31 (when transferred days expire from available balance)

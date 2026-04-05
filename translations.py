@@ -53,7 +53,7 @@ TRANSLATIONS = {
         "schedule_vacation": "Schedule vacation / day off",
         "add_earned_days": "Add earned days",
         "print": "Print",
-        "transferred_note": "(Transferred days must be used by June; not counted after June.)",
+        "transferred_note": "(Transferred days must be used by end of year; not counted after December 31.)",
         
         # All schedules screen
         "all_vacation_schedules": "All vacation schedules",
@@ -190,7 +190,7 @@ TRANSLATIONS = {
         "schedule_vacation": "Закажи годишњи / одсуство",
         "add_earned_days": "Додај зарађене дане",
         "print": "Штампај",
-        "transferred_note": "(Пренети дани морају бити искоришћени до јуна; не рачунају се после јуна.)",
+        "transferred_note": "(Пренети дани морају бити искоришћени до краја године; не рачунају се после 31. децембра.)",
         
         # All schedules screen
         "all_vacation_schedules": "Сви распореди годишњих одмора",

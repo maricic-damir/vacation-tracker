@@ -13,7 +13,7 @@ Business rules:
 - **Working Days Per Week**: Choose between 5-day (Mon-Fri) or 6-day work weeks
   - **5-day workers**: 20 vacation days per year, weekends (Sat-Sun) excluded from deductions
   - **6-day workers**: 24 vacation days per year, only Sundays excluded from deductions
-- **Transferred days** from previous year count only until **June** of the current year; after that they are not included in “days left”.
+- **Transferred days** from previous year count until **December 31** of the current year; after that they are not included in “days left”.
 - **Past start date**: Saving a vacation with start date in the past shows a warning; on confirm, the record is saved and marked as used.
 - **Completion job**: On startup, any record with `end_date < today` is marked completed (used days are already counted in balance).
 
