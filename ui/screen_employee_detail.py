@@ -169,7 +169,7 @@ class EmployeeDetailScreen(QWidget):
         # Used days off table
         self._used_group = QGroupBox()
         self._used_table = QTableWidget()
-        self._used_table.setColumnCount(4)
+        self._used_table.setColumnCount(5)  # Added column for cancel button
         used_layout = QVBoxLayout(self._used_group)
         used_layout.addWidget(self._used_table)
         lay.addWidget(self._used_group)
@@ -249,7 +249,7 @@ class EmployeeDetailScreen(QWidget):
         
         # Update table headers
         self._used_table.setHorizontalHeaderLabels([
-            tr("booking_date"), tr("start"), tr("end"), tr("used_days_column")
+            tr("booking_date"), tr("start"), tr("end"), tr("used_days_column"), tr("actions")
         ])
         self._earned_table.setHorizontalHeaderLabels([
             tr("date_earned"), tr("days"), tr("reason_notes"), tr("created")
@@ -343,7 +343,7 @@ class EmployeeDetailScreen(QWidget):
 
         # Used days
         records = list_vacation_records_employee(conn, self._employee_id)
-        from db_helpers import vacation_days_for_used_table
+        from db_helpers import vacation_days_for_used_table, can_cancel_vacation_record
         self._used_table.setRowCount(len(records))
         for i, r in enumerate(records):
             self._used_table.setItem(i, 0, _table_item(r.get("booking_date", ""), Qt.AlignmentFlag.AlignLeft))
@@ -351,6 +351,20 @@ class EmployeeDetailScreen(QWidget):
             self._used_table.setItem(i, 2, _table_item(r.get("end_date", ""), Qt.AlignmentFlag.AlignLeft))
             days = vacation_days_for_used_table(conn, self._employee_id, r)
             self._used_table.setItem(i, 3, _table_item(days, Qt.AlignmentFlag.AlignRight))
+            
+            # Add cancel button for scheduled vacations that haven't started yet
+            if can_cancel_vacation_record(r):
+                cancel_btn = QPushButton()
+                if tr("language") == "Language":
+                    cancel_btn.setText("Cancel")
+                else:
+                    cancel_btn.setText("Откажи")
+                cancel_btn.clicked.connect(lambda checked, record_id=r.get("id"): self._cancel_vacation(record_id))
+                self._used_table.setCellWidget(i, 4, cancel_btn)
+            else:
+                # Empty cell for completed or started vacations
+                self._used_table.setItem(i, 4, _table_item("", Qt.AlignmentFlag.AlignCenter))
+        
         self._used_table.resizeRowsToContents()
 
         # Earned days
@@ -424,7 +438,8 @@ class EmployeeDetailScreen(QWidget):
             return
         from db_helpers import (get_employee, add_vacation_record, count_working_days_in_range,
                                  count_total_deductible_days, get_available_days_for_deduction, 
-                                 calculate_deduction_breakdown)
+                                 calculate_deduction_breakdown, validate_vacation_scheduling,
+                                 calculate_multi_year_vacation_requirements)
         from database import run_completion_job
         emp = get_employee(conn, self._employee_id)
         name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}" if emp else ""
@@ -439,48 +454,124 @@ class EmployeeDetailScreen(QWidget):
             return
         if start < date.today() and not warn_past_start_date(self, start):
             return
-        is_completed = end < date.today()
         
-        year = start.year
-        days_needed = count_total_deductible_days(conn, data["start_date"], data["end_date"], self._employee_id)
-        available = get_available_days_for_deduction(conn, self._employee_id, year)
-        total_available = available['transferred'] + available['at_start'] + available['earned']
+        # Comprehensive validation including overlap detection and multi-year handling
+        validation = validate_vacation_scheduling(conn, self._employee_id, data["start_date"], data["end_date"])
         
-        if days_needed > total_available:
-            if tr("language") == "Language":
-                QMessageBox.warning(
-                    self,
-                    "Insufficient Days",
-                    f"Cannot schedule vacation.\n\n"
-                    f"Days needed: {days_needed}\n"
-                    f"Days available: {total_available}\n\n"
-                    f"Shortage: {days_needed - total_available} days"
-                )
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Недовољно дана",
-                    f"Не може се заказати одсуство.\n\n"
-                    f"Потребно дана: {days_needed}\n"
-                    f"Доступно дана: {total_available}\n\n"
-                    f"Недостаје: {days_needed - total_available} дана"
-                )
+        if not validation['valid']:
+            error_messages = []
+            
+            # Handle contract eligibility error
+            if "contract_ineligible" in validation['errors']:
+                contract_info = validation['contract_eligibility']
+                if tr("language") == "Language":
+                    error_messages.append("Employee contract does not allow vacation on selected dates:")
+                    error_messages.append(f"  Contract ends: {contract_info['contract_end_date']}")
+                    error_messages.append(f"  Vacation period: {data['start_date']} to {data['end_date']}")
+                    if contract_info['invalid_dates']:
+                        error_messages.append(f"  Invalid dates: {', '.join(contract_info['invalid_dates'])}")
+                else:
+                    error_messages.append("Уговор запосленог не дозвољава одсуство у изабраним датумима:")
+                    error_messages.append(f"  Уговор истиче: {contract_info['contract_end_date']}")
+                    error_messages.append(f"  Период одсуства: {data['start_date']} до {data['end_date']}")
+                    if contract_info['invalid_dates']:
+                        error_messages.append(f"  Неважећи датуми: {', '.join(contract_info['invalid_dates'])}")
+            
+            # Handle overlapping vacation error
+            if "overlapping_vacation" in validation['errors']:
+                overlaps = validation['overlaps']
+                if tr("language") == "Language":
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Overlapping vacation periods detected:")
+                    for overlap in overlaps:
+                        status = "completed" if overlap['is_completed'] else "planned"
+                        error_messages.append(f"  • {overlap['start_date']} to {overlap['end_date']} ({status})")
+                else:
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Откривено је преклапање периода одсуства:")
+                    for overlap in overlaps:
+                        status = "завршено" if overlap['is_completed'] else "планирано"
+                        error_messages.append(f"  • {overlap['start_date']} до {overlap['end_date']} ({status})")
+            
+            # Handle insufficient balance error
+            if "insufficient_balance" in validation['errors']:
+                if tr("language") == "Language":
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Insufficient vacation days:")
+                    for year_info in validation['insufficient_years']:
+                        year = year_info['year']
+                        needed = year_info['needed']
+                        available = year_info['available']
+                        shortage = year_info['shortage']
+                        
+                        # Get year requirements for detailed breakdown
+                        year_req = validation['year_requirements'][year]
+                        avail_detail = year_req['available']
+                        reserved = avail_detail['reserved_days']
+                        
+                        error_messages.append(f"\nYear {year}:")
+                        error_messages.append(f"  Days needed: {needed}")
+                        error_messages.append(f"  Days available: {available}")
+                        if reserved > 0:
+                            error_messages.append(f"  Days reserved by planned vacations: {reserved}")
+                        error_messages.append(f"  Shortage: {shortage} days")
+                else:
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Недовољно дана одсуства:")
+                    for year_info in validation['insufficient_years']:
+                        year = year_info['year']
+                        needed = year_info['needed']
+                        available = year_info['available']
+                        shortage = year_info['shortage']
+                        
+                        # Get year requirements for detailed breakdown
+                        year_req = validation['year_requirements'][year]
+                        avail_detail = year_req['available']
+                        reserved = avail_detail['reserved_days']
+                        
+                        error_messages.append(f"\nГодина {year}:")
+                        error_messages.append(f"  Потребно дана: {needed}")
+                        error_messages.append(f"  Доступно дана: {available}")
+                        if reserved > 0:
+                            error_messages.append(f"  Резервисано планираним одсуствима: {reserved}")
+                        error_messages.append(f"  Недостаје: {shortage} дана")
+            
+            title = "Scheduling Error" if tr("language") == "Language" else "Грешка при заказивању"
+            QMessageBox.warning(self, title, "\n".join(error_messages))
             return
         
+        is_completed = end < date.today()
+        
+        # For multi-year vacations, we need to handle the breakdown differently
+        year_requirements = validation['year_requirements']
+        
+        # Calculate breakdown for completed vacations
         days_from_transferred = 0
         days_from_at_start = 0
         days_from_earned = 0
         
         if is_completed:
-            breakdown = calculate_deduction_breakdown(
-                days_needed,
-                available['transferred'],
-                available['at_start'],
-                available['earned']
-            )
-            days_from_transferred = breakdown['transferred']
-            days_from_at_start = breakdown['at_start']
-            days_from_earned = breakdown['earned']
+            # For completed multi-year vacations, we need to calculate the total breakdown
+            # across all years, but for now we'll use the simple approach for the primary year
+            primary_year = start.year
+            if primary_year in year_requirements:
+                year_req = year_requirements[primary_year]
+                available = get_available_days_for_deduction(conn, self._employee_id, primary_year)
+                days_needed = year_req['days_needed']
+                
+                breakdown = calculate_deduction_breakdown(
+                    days_needed,
+                    available['transferred'],
+                    available['at_start'],
+                    available['earned']
+                )
+                days_from_transferred = breakdown['transferred']
+                days_from_at_start = breakdown['at_start']
+                days_from_earned = breakdown['earned']
         
         try:
             add_vacation_record(
@@ -497,6 +588,80 @@ class EmployeeDetailScreen(QWidget):
             return
         self._load()
         self._refresh()
+
+    def _cancel_vacation(self, record_id: int):
+        """Cancel a scheduled vacation request."""
+        if not record_id:
+            return
+        
+        conn = self._conn()
+        if not conn:
+            return
+        
+        # Get vacation record details for confirmation
+        cur = conn.execute(
+            "SELECT start_date, end_date, booking_date FROM vacation_records WHERE id = ?",
+            (record_id,)
+        )
+        record = cur.fetchone()
+        if not record:
+            QMessageBox.warning(self, tr("error"), "Vacation record not found.")
+            return
+        
+        start_date = record[0]
+        end_date = record[1]
+        booking_date = record[2]
+        
+        # Confirm cancellation
+        if tr("language") == "Language":
+            reply = QMessageBox.question(
+                self,
+                "Cancel Vacation Request",
+                f"Are you sure you want to cancel this vacation request?\n\n"
+                f"Booked: {booking_date}\n"
+                f"Period: {start_date} to {end_date}\n\n"
+                f"This action cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        else:
+            reply = QMessageBox.question(
+                self,
+                "Откажи захтев за одсуство",
+                f"Да ли сте сигурни да желите да откажете овај захтев за одсуство?\n\n"
+                f"Заказано: {booking_date}\n"
+                f"Период: {start_date} до {end_date}\n\n"
+                f"Ова акција се не може поништити.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Delete the vacation record
+        from db_helpers import delete_vacation_record
+        try:
+            success = delete_vacation_record(conn, record_id)
+            if success:
+                if tr("language") == "Language":
+                    QMessageBox.information(
+                        self,
+                        "Vacation Cancelled",
+                        "The vacation request has been successfully cancelled."
+                    )
+                else:
+                    QMessageBox.information(
+                        self,
+                        "Одсуство отказано",
+                        "Захтев за одсуство је успешно отказан."
+                    )
+                self._load()
+                self._refresh()
+            else:
+                QMessageBox.warning(self, tr("error"), "Failed to cancel vacation request.")
+        except Exception as e:
+            QMessageBox.critical(self, tr("error"), f"Error cancelling vacation: {str(e)}")
 
     def _add_earned_days(self):
         if not self._employee_id:

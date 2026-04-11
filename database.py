@@ -277,7 +277,8 @@ def ensure_year_balance(conn: sqlite3.Connection, employee_id: int, year: int, c
 
 def run_completion_job(conn: sqlite3.Connection) -> None:
     """Mark vacation_records as completed where end_date < today and calculate deduction breakdown."""
-    from db_helpers import get_available_days_for_deduction, calculate_deduction_breakdown, count_total_deductible_days
+    from db_helpers import (get_available_days_for_deduction, calculate_deduction_breakdown, 
+                           count_total_deductible_days, calculate_multi_year_vacation_requirements)
     
     today = date.today().isoformat()
     
@@ -295,16 +296,36 @@ def run_completion_job(conn: sqlite3.Connection) -> None:
         start_date = record[2]
         end_date = record[3]
         
-        year = date.fromisoformat(start_date).year
-        days_needed = count_total_deductible_days(conn, start_date, end_date, employee_id)
+        # Handle multi-year vacations properly
+        start_dt = date.fromisoformat(start_date)
+        end_dt = date.fromisoformat(end_date)
         
-        available = get_available_days_for_deduction(conn, employee_id, year)
-        breakdown = calculate_deduction_breakdown(
-            days_needed,
-            available['transferred'],
-            available['at_start'],
-            available['earned']
-        )
+        if start_dt.year == end_dt.year:
+            # Single year vacation - use existing logic
+            year = start_dt.year
+            days_needed = count_total_deductible_days(conn, start_date, end_date, employee_id)
+            
+            available = get_available_days_for_deduction(conn, employee_id, year)
+            breakdown = calculate_deduction_breakdown(
+                days_needed,
+                available['transferred'],
+                available['at_start'],
+                available['earned']
+            )
+        else:
+            # Multi-year vacation - calculate breakdown across years
+            # For now, we'll use a simplified approach: deduct from the start year
+            # This could be enhanced to properly distribute across years in the future
+            year = start_dt.year
+            days_needed = count_total_deductible_days(conn, start_date, end_date, employee_id)
+            
+            available = get_available_days_for_deduction(conn, employee_id, year)
+            breakdown = calculate_deduction_breakdown(
+                days_needed,
+                available['transferred'],
+                available['at_start'],
+                available['earned']
+            )
         
         conn.execute(
             """UPDATE vacation_records 

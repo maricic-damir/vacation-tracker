@@ -185,6 +185,72 @@ def get_available_days_for_deduction(
     }
 
 
+def get_available_days_for_scheduling(
+    conn: sqlite3.Connection,
+    employee_id: int,
+    year: int,
+    exclude_record_id: Optional[int] = None
+) -> dict[str, int]:
+    """
+    Get available days for scheduling new vacation, accounting for both completed 
+    and planned (not completed) vacation records that reserve days.
+    Returns dict with keys: 'transferred', 'at_start', 'earned', 'reserved_days'
+    """
+    # Get base available days (only accounting for completed vacations)
+    available = get_available_days_for_deduction(conn, employee_id, year)
+    
+    # Calculate reserved days from planned (not completed) vacations
+    year_start = f"{year}-01-01"
+    year_end = f"{year}-12-31"
+    
+    query = """
+        SELECT start_date, end_date 
+        FROM vacation_records
+        WHERE employee_id = ? AND is_completed = 0
+        AND (strftime('%Y', start_date) = ? OR strftime('%Y', end_date) = ? OR (start_date <= ? AND end_date >= ?))
+    """
+    params = [employee_id, str(year), str(year), year_start, year_end]
+    
+    if exclude_record_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_record_id)
+    
+    cur = conn.execute(query, params)
+    
+    total_reserved_days = 0
+    for start_s, end_s in cur.fetchall():
+        # Calculate overlap with the target year for multi-year periods
+        start = date.fromisoformat(start_s)
+        end = date.fromisoformat(end_s)
+        y_start = date(year, 1, 1)
+        y_end = date(year, 12, 31)
+        
+        overlap_start = max(start, y_start)
+        overlap_end = min(end, y_end)
+        
+        if overlap_start <= overlap_end:
+            reserved_days = count_total_deductible_days(conn, overlap_start.isoformat(), overlap_end.isoformat(), employee_id)
+            total_reserved_days += reserved_days
+    
+    # Calculate how reserved days would be deducted using the same priority order
+    reserved_breakdown = calculate_deduction_breakdown(
+        total_reserved_days,
+        available['transferred'],
+        available['at_start'],
+        available['earned']
+    )
+    
+    # Subtract reserved days from available buckets
+    result = {
+        'transferred': max(0, available['transferred'] - reserved_breakdown['transferred']),
+        'at_start': max(0, available['at_start'] - reserved_breakdown['at_start']),
+        'earned': max(0, available['earned'] - reserved_breakdown['earned']),
+        'reserved_days': total_reserved_days
+    }
+    
+    return result
+
+
 def total_vacation_left(conn: sqlite3.Connection, employee_id: int, year: int) -> int:
     """(days_at_start + (transferred if before end of year else 0) + earned) - used."""
     cur = conn.execute(
@@ -376,6 +442,37 @@ def list_vacation_records_all(conn: sqlite3.Connection) -> list[dict]:
     return _rows_dicts(cur)
 
 
+def check_vacation_overlap(
+    conn: sqlite3.Connection,
+    employee_id: int,
+    start_date: str,
+    end_date: str,
+    exclude_record_id: Optional[int] = None
+) -> list[dict]:
+    """
+    Check for overlapping vacation records for the given employee and date range.
+    Returns list of overlapping records with their details.
+    """
+    query = """
+        SELECT id, start_date, end_date, is_completed, booking_date
+        FROM vacation_records 
+        WHERE employee_id = ? 
+        AND (
+            (start_date <= ? AND end_date >= ?) OR
+            (start_date <= ? AND end_date >= ?) OR
+            (start_date >= ? AND end_date <= ?)
+        )
+    """
+    params = [employee_id, start_date, start_date, end_date, end_date, start_date, end_date]
+    
+    if exclude_record_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_record_id)
+    
+    cur = conn.execute(query, params)
+    return _rows_dicts(cur)
+
+
 def add_vacation_record(
     conn: sqlite3.Connection,
     employee_id: int,
@@ -396,6 +493,34 @@ def add_vacation_record(
     )
     conn.commit()
     return cur.lastrowid
+
+
+def delete_vacation_record(conn: sqlite3.Connection, record_id: int) -> bool:
+    """
+    Delete a vacation record by ID. Returns True if record was deleted, False if not found.
+    Should only be used for scheduled (not completed) vacation records.
+    """
+    cur = conn.execute("DELETE FROM vacation_records WHERE id = ?", (record_id,))
+    deleted = cur.rowcount > 0
+    if deleted:
+        conn.commit()
+    return deleted
+
+
+def can_cancel_vacation_record(vacation_record: dict) -> bool:
+    """
+    Check if a vacation record can be cancelled.
+    Only scheduled (not completed) vacations that haven't started yet can be cancelled.
+    """
+    if vacation_record.get('is_completed'):
+        return False
+    
+    start_date_str = vacation_record.get('start_date')
+    if not start_date_str:
+        return False
+    
+    start_date = date.fromisoformat(start_date_str)
+    return start_date > date.today()
 
 
 def count_days_in_range(start_date: str, end_date: str) -> int:
@@ -551,3 +676,162 @@ def count_total_deductible_days(conn: sqlite3.Connection, start_date: str, end_d
     if working_days_per_week == 5:
         return count_working_days_in_range(conn, start_date, end_date, employee_id)
     return calculate_deduction_days_new_algorithm(conn, start_date, end_date, employee_id)
+
+
+def calculate_multi_year_vacation_requirements(
+    conn: sqlite3.Connection,
+    employee_id: int,
+    start_date: str,
+    end_date: str
+) -> dict[int, dict[str, int]]:
+    """
+    Calculate vacation day requirements for a vacation period that may span multiple years.
+    Returns dict mapping year -> {'days_needed': int, 'available': dict, 'sufficient': bool}
+    """
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    
+    # Get all years this vacation spans
+    years = list(range(start.year, end.year + 1))
+    result = {}
+    
+    for year in years:
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+        
+        # Calculate overlap with this year
+        overlap_start = max(start, year_start)
+        overlap_end = min(end, year_end)
+        
+        if overlap_start <= overlap_end:
+            # Calculate days needed for this year's portion
+            days_needed = count_total_deductible_days(
+                conn, 
+                overlap_start.isoformat(), 
+                overlap_end.isoformat(), 
+                employee_id
+            )
+            
+            # Get available days for this year (including reservation check)
+            available = get_available_days_for_scheduling(conn, employee_id, year)
+            total_available = available['transferred'] + available['at_start'] + available['earned']
+            
+            result[year] = {
+                'days_needed': days_needed,
+                'available': available,
+                'total_available': total_available,
+                'sufficient': days_needed <= total_available,
+                'overlap_start': overlap_start.isoformat(),
+                'overlap_end': overlap_end.isoformat()
+            }
+    
+    return result
+
+
+def check_contract_eligibility(
+    conn: sqlite3.Connection,
+    employee_id: int,
+    start_date: str,
+    end_date: str
+) -> dict[str, any]:
+    """
+    Check if employee is eligible to take vacation based on contract dates.
+    
+    Returns dict with:
+    - 'eligible': bool
+    - 'contract_end_date': str or None
+    - 'invalid_dates': list of dates outside contract period
+    """
+    # Get employee contract information
+    employee = get_employee(conn, employee_id)
+    if not employee:
+        return {'eligible': False, 'contract_end_date': None, 'invalid_dates': []}
+    
+    contract_end_date = employee.get('contract_end_date')
+    
+    # Open-ended contracts have no end date restriction
+    if not contract_end_date:
+        return {'eligible': True, 'contract_end_date': None, 'invalid_dates': []}
+    
+    # Check if vacation period extends beyond contract end date
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    contract_end = date.fromisoformat(contract_end_date)
+    
+    invalid_dates = []
+    
+    # Check if start date is after contract end
+    if start > contract_end:
+        invalid_dates.append(start_date)
+    
+    # Check if end date is after contract end
+    if end > contract_end:
+        invalid_dates.append(end_date)
+    
+    return {
+        'eligible': len(invalid_dates) == 0,
+        'contract_end_date': contract_end_date,
+        'invalid_dates': invalid_dates
+    }
+
+
+def validate_vacation_scheduling(
+    conn: sqlite3.Connection,
+    employee_id: int,
+    start_date: str,
+    end_date: str,
+    exclude_record_id: Optional[int] = None
+) -> dict[str, any]:
+    """
+    Comprehensive validation for vacation scheduling including overlap detection,
+    balance checking, multi-year handling, and contract eligibility.
+    
+    Returns dict with:
+    - 'valid': bool
+    - 'errors': list of error messages
+    - 'overlaps': list of overlapping records
+    - 'year_requirements': dict of per-year requirements
+    - 'total_days_needed': int
+    - 'contract_eligibility': dict with contract validation results
+    """
+    errors = []
+    
+    # Check contract eligibility
+    contract_eligibility = check_contract_eligibility(conn, employee_id, start_date, end_date)
+    if not contract_eligibility['eligible']:
+        errors.append("contract_ineligible")
+    
+    # Check for overlapping vacations
+    overlaps = check_vacation_overlap(conn, employee_id, start_date, end_date, exclude_record_id)
+    if overlaps:
+        errors.append("overlapping_vacation")
+    
+    # Calculate multi-year requirements
+    year_requirements = calculate_multi_year_vacation_requirements(conn, employee_id, start_date, end_date)
+    
+    # Check if all years have sufficient balance
+    insufficient_years = []
+    total_days_needed = 0
+    
+    for year, req in year_requirements.items():
+        total_days_needed += req['days_needed']
+        if not req['sufficient']:
+            insufficient_years.append({
+                'year': year,
+                'needed': req['days_needed'],
+                'available': req['total_available'],
+                'shortage': req['days_needed'] - req['total_available']
+            })
+    
+    if insufficient_years:
+        errors.append("insufficient_balance")
+    
+    return {
+        'valid': len(errors) == 0,
+        'errors': errors,
+        'overlaps': overlaps,
+        'year_requirements': year_requirements,
+        'total_days_needed': total_days_needed,
+        'insufficient_years': insufficient_years,
+        'contract_eligibility': contract_eligibility
+    }

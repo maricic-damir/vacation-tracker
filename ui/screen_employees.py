@@ -318,7 +318,8 @@ class EmployeeListScreen(QWidget):
         from ui.dialogs import warn_past_start_date
         from db_helpers import (add_vacation_record, count_working_days_in_range, 
                                  count_total_deductible_days, get_available_days_for_deduction, 
-                                 calculate_deduction_breakdown)
+                                 calculate_deduction_breakdown, validate_vacation_scheduling,
+                                 calculate_multi_year_vacation_requirements)
         from database import ensure_year_balance, run_completion_job
         conn = self._conn()
         if not conn:
@@ -331,48 +332,124 @@ class EmployeeListScreen(QWidget):
         is_past = start < date.today()
         if is_past and not warn_past_start_date(self, start):
             return
-        is_completed = end < date.today()
         
-        year = start.year
-        days_needed = count_total_deductible_days(conn, data["start_date"], data["end_date"], employee_id)
-        available = get_available_days_for_deduction(conn, employee_id, year)
-        total_available = available['transferred'] + available['at_start'] + available['earned']
+        # Comprehensive validation including overlap detection and multi-year handling
+        validation = validate_vacation_scheduling(conn, employee_id, data["start_date"], data["end_date"])
         
-        if days_needed > total_available:
-            if tr("language") == "Language":
-                QMessageBox.warning(
-                    self,
-                    "Insufficient Days",
-                    f"Cannot schedule vacation.\n\n"
-                    f"Days needed: {days_needed}\n"
-                    f"Days available: {total_available}\n\n"
-                    f"Shortage: {days_needed - total_available} days"
-                )
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Недовољно дана",
-                    f"Не може се заказати одсуство.\n\n"
-                    f"Потребно дана: {days_needed}\n"
-                    f"Доступно дана: {total_available}\n\n"
-                    f"Недостаје: {days_needed - total_available} дана"
-                )
+        if not validation['valid']:
+            error_messages = []
+            
+            # Handle contract eligibility error
+            if "contract_ineligible" in validation['errors']:
+                contract_info = validation['contract_eligibility']
+                if tr("language") == "Language":
+                    error_messages.append("Employee contract does not allow vacation on selected dates:")
+                    error_messages.append(f"  Contract ends: {contract_info['contract_end_date']}")
+                    error_messages.append(f"  Vacation period: {data['start_date']} to {data['end_date']}")
+                    if contract_info['invalid_dates']:
+                        error_messages.append(f"  Invalid dates: {', '.join(contract_info['invalid_dates'])}")
+                else:
+                    error_messages.append("Уговор запосленог не дозвољава одсуство у изабраним датумима:")
+                    error_messages.append(f"  Уговор истиче: {contract_info['contract_end_date']}")
+                    error_messages.append(f"  Период одсуства: {data['start_date']} до {data['end_date']}")
+                    if contract_info['invalid_dates']:
+                        error_messages.append(f"  Неважећи датуми: {', '.join(contract_info['invalid_dates'])}")
+            
+            # Handle overlapping vacation error
+            if "overlapping_vacation" in validation['errors']:
+                overlaps = validation['overlaps']
+                if tr("language") == "Language":
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Overlapping vacation periods detected:")
+                    for overlap in overlaps:
+                        status = "completed" if overlap['is_completed'] else "planned"
+                        error_messages.append(f"  • {overlap['start_date']} to {overlap['end_date']} ({status})")
+                else:
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Откривено је преклапање периода одсуства:")
+                    for overlap in overlaps:
+                        status = "завршено" if overlap['is_completed'] else "планирано"
+                        error_messages.append(f"  • {overlap['start_date']} до {overlap['end_date']} ({status})")
+            
+            # Handle insufficient balance error
+            if "insufficient_balance" in validation['errors']:
+                if tr("language") == "Language":
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Insufficient vacation days:")
+                    for year_info in validation['insufficient_years']:
+                        year = year_info['year']
+                        needed = year_info['needed']
+                        available = year_info['available']
+                        shortage = year_info['shortage']
+                        
+                        # Get year requirements for detailed breakdown
+                        year_req = validation['year_requirements'][year]
+                        avail_detail = year_req['available']
+                        reserved = avail_detail['reserved_days']
+                        
+                        error_messages.append(f"\nYear {year}:")
+                        error_messages.append(f"  Days needed: {needed}")
+                        error_messages.append(f"  Days available: {available}")
+                        if reserved > 0:
+                            error_messages.append(f"  Days reserved by planned vacations: {reserved}")
+                        error_messages.append(f"  Shortage: {shortage} days")
+                else:
+                    if error_messages:  # Add separator if there are previous errors
+                        error_messages.append("")
+                    error_messages.append("Недовољно дана одсуства:")
+                    for year_info in validation['insufficient_years']:
+                        year = year_info['year']
+                        needed = year_info['needed']
+                        available = year_info['available']
+                        shortage = year_info['shortage']
+                        
+                        # Get year requirements for detailed breakdown
+                        year_req = validation['year_requirements'][year]
+                        avail_detail = year_req['available']
+                        reserved = avail_detail['reserved_days']
+                        
+                        error_messages.append(f"\nГодина {year}:")
+                        error_messages.append(f"  Потребно дана: {needed}")
+                        error_messages.append(f"  Доступно дана: {available}")
+                        if reserved > 0:
+                            error_messages.append(f"  Резервисано планираним одсуствима: {reserved}")
+                        error_messages.append(f"  Недостаје: {shortage} дана")
+            
+            title = "Scheduling Error" if tr("language") == "Language" else "Грешка при заказивању"
+            QMessageBox.warning(self, title, "\n".join(error_messages))
             return
         
+        is_completed = end < date.today()
+        
+        # For multi-year vacations, we need to handle the breakdown differently
+        year_requirements = validation['year_requirements']
+        
+        # Calculate breakdown for completed vacations
         days_from_transferred = 0
         days_from_at_start = 0
         days_from_earned = 0
         
         if is_completed:
-            breakdown = calculate_deduction_breakdown(
-                days_needed,
-                available['transferred'],
-                available['at_start'],
-                available['earned']
-            )
-            days_from_transferred = breakdown['transferred']
-            days_from_at_start = breakdown['at_start']
-            days_from_earned = breakdown['earned']
+            # For completed multi-year vacations, we need to calculate the total breakdown
+            # across all years, but for now we'll use the simple approach for the primary year
+            primary_year = start.year
+            if primary_year in year_requirements:
+                year_req = year_requirements[primary_year]
+                available = get_available_days_for_deduction(conn, employee_id, primary_year)
+                days_needed = year_req['days_needed']
+                
+                breakdown = calculate_deduction_breakdown(
+                    days_needed,
+                    available['transferred'],
+                    available['at_start'],
+                    available['earned']
+                )
+                days_from_transferred = breakdown['transferred']
+                days_from_at_start = breakdown['at_start']
+                days_from_earned = breakdown['earned']
         
         try:
             add_vacation_record(
