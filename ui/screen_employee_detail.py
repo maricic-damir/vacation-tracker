@@ -249,7 +249,7 @@ class EmployeeDetailScreen(QWidget):
         
         # Update table headers
         self._used_table.setHorizontalHeaderLabels([
-            tr("booking_date"), tr("start"), tr("end"), tr("days")
+            tr("booking_date"), tr("start"), tr("end"), tr("used_days_column")
         ])
         self._earned_table.setHorizontalHeaderLabels([
             tr("date_earned"), tr("days"), tr("reason_notes"), tr("created")
@@ -343,13 +343,13 @@ class EmployeeDetailScreen(QWidget):
 
         # Used days
         records = list_vacation_records_employee(conn, self._employee_id)
-        from db_helpers import count_days_in_range
+        from db_helpers import vacation_days_for_used_table
         self._used_table.setRowCount(len(records))
         for i, r in enumerate(records):
             self._used_table.setItem(i, 0, _table_item(r.get("booking_date", ""), Qt.AlignmentFlag.AlignLeft))
             self._used_table.setItem(i, 1, _table_item(r.get("start_date", ""), Qt.AlignmentFlag.AlignLeft))
             self._used_table.setItem(i, 2, _table_item(r.get("end_date", ""), Qt.AlignmentFlag.AlignLeft))
-            days = count_days_in_range(r["start_date"], r["end_date"])
+            days = vacation_days_for_used_table(conn, self._employee_id, r)
             self._used_table.setItem(i, 3, _table_item(days, Qt.AlignmentFlag.AlignRight))
         self._used_table.resizeRowsToContents()
 
@@ -553,7 +553,7 @@ class EmployeeDetailScreen(QWidget):
         if not conn:
             return
         
-        from db_helpers import get_employee, get_year_balance, list_vacation_records_employee, list_earned_days, count_days_in_range
+        from db_helpers import get_employee, get_year_balance, list_vacation_records_employee, list_earned_days, vacation_days_for_used_table
         from database import ensure_year_balance
         
         emp = get_employee(conn, self._employee_id)
@@ -649,7 +649,7 @@ class EmployeeDetailScreen(QWidget):
                         <th>{tr('booking_date')}</th>
                         <th>{tr('start')}</th>
                         <th>{tr('end')}</th>
-                        <th class="right-align">{tr('days')}</th>
+                        <th class="right-align">{tr('used_days_column')}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -657,7 +657,7 @@ class EmployeeDetailScreen(QWidget):
         
         records = list_vacation_records_employee(conn, self._employee_id)
         for r in records:
-            days = count_days_in_range(r["start_date"], r["end_date"])
+            days = vacation_days_for_used_table(conn, self._employee_id, r)
             html += f"""
                     <tr>
                         <td>{r.get('booking_date', '')}</td>
