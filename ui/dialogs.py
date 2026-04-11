@@ -74,7 +74,7 @@ def resolve_missing_saved_db_path(parent: Optional[QWidget], saved_path: str) ->
         tr("locate_existing_database"),
         QMessageBox.ButtonRole.ActionRole,
     )
-    box.addButton(QMessageBox.StandardButton.Cancel, QMessageBox.ButtonRole.RejectRole)
+    box.addButton(QMessageBox.StandardButton.Cancel)
     box.exec()
     clicked = box.clickedButton()
     if clicked == create_btn:
