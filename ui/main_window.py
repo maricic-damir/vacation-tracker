@@ -17,7 +17,11 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from database import get_connection, resolve_db_path, run_completion_job
-from ui.dialogs import choose_or_create_db_path, locate_db_path
+from ui.dialogs import (
+    choose_or_create_db_path,
+    locate_db_path,
+    resolve_missing_saved_db_path,
+)
 from ui.screen_employees import EmployeeListScreen
 from ui.screen_employee_detail import EmployeeDetailScreen
 from ui.screen_all_schedules import AllSchedulesScreen
@@ -140,7 +144,10 @@ class MainWindow(QMainWindow):
         def locate():
             return locate_db_path(self)
 
-        path = resolve_db_path(choose, locate)
+        def missing_saved(saved_path: str):
+            return resolve_missing_saved_db_path(self, saved_path)
+
+        path = resolve_db_path(choose, locate, missing_saved)
         if not path:
             QMessageBox.information(
                 self,

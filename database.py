@@ -2,7 +2,7 @@
 import sqlite3
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from config import get_db_path, get_saved_db_path_raw, set_db_path
 
@@ -220,20 +220,29 @@ def get_connection(db_path: str) -> sqlite3.Connection:
 # DB path: first run vs find
 # ---------------------------------------------------------------------------
 
-def resolve_db_path(choose_or_create_callback, locate_callback) -> Optional[str]:
+def resolve_db_path(
+    choose_or_create_callback,
+    locate_callback,
+    missing_saved_path_callback: Optional[Callable[[str], Optional[str]]] = None,
+) -> Optional[str]:
     """
     Use saved path if valid. If no path or file missing:
-    - First time (no config): call choose_or_create_callback() -> user picks where to store new DB.
-    - Config existed but file missing: call locate_callback() -> user locates vacation.db.
+    - First time (no saved db_path in config): choose_or_create_callback() -> user picks path for new DB.
+    - Config had db_path but file missing: missing_saved_path_callback(saved_path) if provided,
+      else locate_callback() -> user locates an existing file.
     Returns None if user cancelled.
     """
     saved = get_db_path()
     if saved:
         return saved
     # App was run before on this machine if we have a saved path (even invalid)
-    had_saved_path = get_saved_db_path_raw() is not None
+    raw_saved = get_saved_db_path_raw()
+    had_saved_path = raw_saved is not None
     if had_saved_path:
-        path = locate_callback()
+        if missing_saved_path_callback and raw_saved:
+            path = missing_saved_path_callback(raw_saved)
+        else:
+            path = locate_callback()
     else:
         path = choose_or_create_callback()
     if path:

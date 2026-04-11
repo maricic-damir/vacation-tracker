@@ -6,6 +6,10 @@ TRANSLATIONS = {
         "app_title": "Vacation tracker",
         "database_required": "Database required",
         "no_database_selected": "No database was selected. The application will close.",
+        "database_file_missing_title": "Database file not found",
+        "database_file_missing_message": "The database file was not found at:\n{path}\n\nCreate a new empty database at this location, or locate an existing database file.",
+        "create_empty_database_here": "Create new database here",
+        "locate_existing_database": "Locate existing database…",
         
         # Language toggle
         "language": "Language",
@@ -176,6 +180,10 @@ TRANSLATIONS = {
         "app_title": "Праћење годишњих одмора",
         "database_required": "База података је неопходна",
         "no_database_selected": "База података није изабрана. Апликација ће се затворити.",
+        "database_file_missing_title": "Фајл базе није пронађен",
+        "database_file_missing_message": "Фајл базе није пронађен на:\n{path}\n\nМожете креирати нову празну базу на овој локацији или пронаћи постојећи фајл базе.",
+        "create_empty_database_here": "Креирај нову базу овде",
+        "locate_existing_database": "Пронађи постојећу базу…",
         
         # Language toggle
         "language": "Језик",

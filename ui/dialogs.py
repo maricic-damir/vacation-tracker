@@ -60,6 +60,30 @@ def locate_db_path(parent: Optional[QWidget]) -> Optional[str]:
     return path or None
 
 
+def resolve_missing_saved_db_path(parent: Optional[QWidget], saved_path: str) -> Optional[str]:
+    """Saved path in config but file missing: create empty DB there or locate another file."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(tr("database_file_missing_title"))
+    box.setText(tr("database_file_missing_message").format(path=saved_path))
+    create_btn = box.addButton(
+        tr("create_empty_database_here"),
+        QMessageBox.ButtonRole.AcceptRole,
+    )
+    locate_btn = box.addButton(
+        tr("locate_existing_database"),
+        QMessageBox.ButtonRole.ActionRole,
+    )
+    box.addButton(QMessageBox.StandardButton.Cancel, QMessageBox.ButtonRole.RejectRole)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked == create_btn:
+        return saved_path
+    if clicked == locate_btn:
+        return locate_db_path(parent)
+    return None
+
+
 def warn_past_start_date(parent: QWidget, start_date: date) -> bool:
     """Warn that start date is in the past; return True if user confirms."""
     if tr("language") == "Language":  # English
