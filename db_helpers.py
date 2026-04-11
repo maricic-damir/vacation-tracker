@@ -35,7 +35,9 @@ def list_employees(conn: sqlite3.Connection) -> list[dict]:
 
 def get_employee(conn: sqlite3.Connection, employee_id: int) -> Optional[dict]:
     cur = conn.execute(
-        "SELECT id, jmbg, first_name, last_name, contract_type, contract_end_date, start_contract_date, is_active, created_at, updated_at FROM employees WHERE id = ?",
+        """SELECT id, jmbg, first_name, last_name, contract_type, contract_end_date, religion,
+                  start_contract_date, working_days_per_week, is_active, created_at, updated_at
+           FROM employees WHERE id = ?""",
         (employee_id,),
     )
     row = cur.fetchone()
@@ -343,11 +345,25 @@ def add_earned_days(
 
 def list_vacation_records_employee(conn: sqlite3.Connection, employee_id: int) -> list[dict]:
     cur = conn.execute(
-        """SELECT id, booking_date, start_date, end_date, is_completed, created_at
+        """SELECT id, booking_date, start_date, end_date, is_completed,
+                  days_from_transferred, days_from_at_start, days_from_earned, created_at
            FROM vacation_records WHERE employee_id = ? ORDER BY start_date DESC""",
         (employee_id,),
     )
     return _rows_dicts(cur)
+
+
+def vacation_days_for_used_table(conn: sqlite3.Connection, employee_id: int, row: dict) -> int:
+    """Deducted days for completed records (stored breakdown); otherwise deductible days for the range."""
+    if row.get("is_completed"):
+        s = (
+            int(row.get("days_from_transferred") or 0)
+            + int(row.get("days_from_at_start") or 0)
+            + int(row.get("days_from_earned") or 0)
+        )
+        if s > 0:
+            return s
+    return count_total_deductible_days(conn, row["start_date"], row["end_date"], employee_id)
 
 
 def list_vacation_records_all(conn: sqlite3.Connection) -> list[dict]:
@@ -522,6 +538,16 @@ def calculate_deduction_days_new_algorithm(conn: sqlite3.Connection, start_date:
 def count_total_deductible_days(conn: sqlite3.Connection, start_date: str, end_date: str, employee_id: int) -> int:
     """
     Count total days to be deducted from vacation bucket.
-    Uses the new 6-day work week algorithm (Monday-Saturday working, Sunday rest).
+
+    5-day week (Mon–Fri): only working days in the range count; Saturday and Sunday
+    are never deducted (same rules as count_working_days_in_range).
+
+    6-day week (Mon–Sat): uses calculate_deduction_days_new_algorithm (calendar-based
+    with Sunday rest and religion-aware holidays).
     """
+    cur = conn.execute("SELECT working_days_per_week FROM employees WHERE id = ?", (employee_id,))
+    row = cur.fetchone()
+    working_days_per_week = row[0] if row else 6
+    if working_days_per_week == 5:
+        return count_working_days_in_range(conn, start_date, end_date, employee_id)
     return calculate_deduction_days_new_algorithm(conn, start_date, end_date, employee_id)
