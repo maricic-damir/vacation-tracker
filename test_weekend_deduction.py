@@ -14,7 +14,7 @@ def test_weekend_counting():
     # Create in-memory database
     conn = get_connection(":memory:")
     
-    # Create a test employee (Orthodox)
+    # Create a test employee (Orthodox, default 6-day week Mon–Sat)
     employee_id = insert_employee(
         conn,
         jmbg="1234567890123",
@@ -23,7 +23,8 @@ def test_weekend_counting():
         contract_type="open_ended",
         contract_end_date=None,
         religion="orthodox",
-        start_contract_date="2026-01-01"
+        start_contract_date="2026-01-01",
+        working_days_per_week=6,
     )
     
     print("Test 1: Regular week (Mon-Fri)")
@@ -49,12 +50,11 @@ def test_weekend_counting():
     weekend = count_weekend_days_excluding_holidays(conn, "2026-01-05", "2026-01-11", employee_id)
     total = count_total_deductible_days(conn, "2026-01-05", "2026-01-11", employee_id)
     print(f"Date range: 2026-01-05 (Mon) to 2026-01-11 (Sun)")
-    print(f"Working days (old logic): {working} (Mon-Fri)")
-    print(f"Weekend days (old logic): {weekend} (Sat-Sun excluding holidays)")
+    print(f"Working days (Mon–Sat schedule): {working} (Mon–Sat in range)")
+    print(f"Weekend-only days (Sun, non-holiday): {weekend}")
     print(f"Total deductible (new algorithm): {total} (expected: 6 = 7 total - 1 Sunday)")
-    # Note: We keep the old working/weekend functions for reference but use new total calculation
-    assert working == 5, f"Expected 5 working days (Mon-Fri), got {working}"
-    assert weekend == 2, f"Expected 2 weekend days (Sat-Sun), got {weekend}"
+    assert working == 6, f"Expected 6 working days (Mon–Sat), got {working}"
+    assert weekend == 1, f"Expected 1 weekend day (Sunday only), got {weekend}"
     assert total == 6, f"Expected 6 total days (new algorithm), got {total}"
     print("✓ PASSED\n")
     
@@ -65,11 +65,11 @@ def test_weekend_counting():
     weekend = count_weekend_days_excluding_holidays(conn, "2026-01-10", "2026-01-10", employee_id)
     total = count_total_deductible_days(conn, "2026-01-10", "2026-01-10", employee_id)
     print(f"Date range: 2026-01-10 (Sat)")
-    print(f"Working days: {working} (expected: 0)")
-    print(f"Weekend days: {weekend} (expected: 1)")
+    print(f"Working days: {working} (expected: 1 — Saturday is a workday)")
+    print(f"Weekend days: {weekend} (expected: 0)")
     print(f"Total deductible: {total} (expected: 1)")
-    assert working == 0, f"Expected 0 working days, got {working}"
-    assert weekend == 1, f"Expected 1 weekend day, got {weekend}"
+    assert working == 1, f"Expected 1 working day (Saturday), got {working}"
+    assert weekend == 0, f"Expected 0 weekend days, got {weekend}"
     assert total == 1, f"Expected 1 total day, got {total}"
     print("✓ PASSED\n")
     
@@ -103,11 +103,11 @@ def test_weekend_counting():
     weekend = count_weekend_days_excluding_holidays(conn, "2026-02-14", "2026-02-15", employee_id)
     total = count_total_deductible_days(conn, "2026-02-14", "2026-02-15", employee_id)
     print(f"Date range: 2026-02-14 (Sat) to 2026-02-15 (Sun - State Holiday)")
-    print(f"Working days (old logic): {working} (expected: 0)")
-    print(f"Weekend days (old logic): {weekend} (expected: 1 - only Sat, Sun is holiday)")
+    print(f"Working days: {working} (expected: 1 — Saturday is a workday)")
+    print(f"Weekend days (Sun only, non-holiday): {weekend} (expected: 0 — Sunday is a holiday)")
     print(f"Total deductible (new algorithm): {total} (expected: 1 = 2 total - 0 rest days - 1 holiday)")
-    assert working == 0, f"Expected 0 working days, got {working}"
-    assert weekend == 1, f"Expected 1 weekend day (Sat only), got {weekend}"
+    assert working == 1, f"Expected 1 working day (Saturday), got {working}"
+    assert weekend == 0, f"Expected 0 weekend days (Sunday is holiday), got {weekend}"
     assert total == 1, f"Expected 1 total day (new algorithm), got {total}"
     print("✓ PASSED\n")
     
@@ -119,11 +119,11 @@ def test_weekend_counting():
     weekend = count_weekend_days_excluding_holidays(conn, "2026-01-05", "2026-01-18", employee_id)
     total = count_total_deductible_days(conn, "2026-01-05", "2026-01-18", employee_id)
     print(f"Date range: 2026-01-05 (Mon) to 2026-01-18 (Sun)")
-    print(f"Working days (old logic): {working} (expected: 10 Mon-Fri)")
-    print(f"Weekend days (old logic): {weekend} (expected: 4 - two Saturdays, two Sundays)")
+    print(f"Working days (Mon–Sat): {working} (expected: 12)")
+    print(f"Weekend days (Sundays, non-holiday): {weekend} (expected: 2)")
     print(f"Total deductible (new algorithm): {total} (expected: 12 = 14 total - 2 Sundays)")
-    assert working == 10, f"Expected 10 working days, got {working}"
-    assert weekend == 4, f"Expected 4 weekend days, got {weekend}"
+    assert working == 12, f"Expected 12 working days, got {working}"
+    assert weekend == 2, f"Expected 2 weekend days (two Sundays), got {weekend}"
     assert total == 12, f"Expected 12 total days (new algorithm), got {total}"
     print("✓ PASSED\n")
     
