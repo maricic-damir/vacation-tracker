@@ -344,6 +344,11 @@ class EmployeeDetailScreen(QWidget):
         # Used days
         records = list_vacation_records_employee(conn, self._employee_id)
         from db_helpers import vacation_days_for_used_table, can_cancel_vacation_record
+        
+        # Clear existing cell widgets in the actions column to prevent stale buttons
+        for row in range(self._used_table.rowCount()):
+            self._used_table.removeCellWidget(row, 4)
+        
         self._used_table.setRowCount(len(records))
         for i, r in enumerate(records):
             self._used_table.setItem(i, 0, _table_item(r.get("booking_date", ""), Qt.AlignmentFlag.AlignLeft))

@@ -767,6 +767,11 @@ class ManageNonWorkingDaysDialog(QDialog):
             )
     
     def _populate_table(self):
+        # Clear existing cell widgets to prevent stale widgets
+        for row in range(self.table.rowCount()):
+            self.table.removeCellWidget(row, 0)
+            self.table.removeCellWidget(row, 4)
+        
         self.table.setRowCount(len(self._holidays))
         
         for row, holiday in enumerate(self._holidays):
@@ -1073,6 +1078,10 @@ class SpecialLeaveDialog(QDialog):
         # Refresh usage table
         usage_records = get_special_leave_usage_for_employee(self._conn, self._employee_id, current_year)
         
+        # Clear existing cell widgets to prevent stale buttons
+        for row in range(self._usage_table.rowCount()):
+            self._usage_table.removeCellWidget(row, 4)
+        
         self._usage_table.setRowCount(len(usage_records))
         for i, record in enumerate(usage_records):
             # Use Serbian names if current language is Serbian
@@ -1266,6 +1275,11 @@ class AdjustSpecialLeaveEntitlementsDialog(QDialog):
     def _populate_table(self):
         """Populate the table with current special leave types and entitlements."""
         leave_types = get_special_leave_types(self._conn)
+        
+        # Clear existing cell widgets to prevent stale widgets
+        for row in range(self._table.rowCount()):
+            self._table.removeCellWidget(row, 1)
+            self._table.removeCellWidget(row, 2)
         
         self._table.setRowCount(len(leave_types))
         for i, leave_type in enumerate(leave_types):
