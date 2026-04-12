@@ -690,7 +690,9 @@ def calculate_deduction_days_new_algorithm(conn: sqlite3.Connection, start_date:
     
     while current <= e:
         if is_non_working_day_for_employee(conn, current.isoformat(), employee_id):
-            holiday_count += 1
+            # Only count the holiday if it's not a Sunday (to avoid double-counting)
+            if current.weekday() != 6:  # 6 = Sunday
+                holiday_count += 1
         current = date.fromordinal(current.toordinal() + 1)
     
     # 5. Calculate deduction days
