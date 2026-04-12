@@ -858,7 +858,9 @@ class EmployeeDetailScreen(QWidget):
         """
         
         records = list_vacation_records_employee(conn, self._employee_id)
-        for r in records:
+        # Filter to show only completed records in print to avoid confusion
+        completed_records = [r for r in records if r.get('is_completed')]
+        for r in completed_records:
             days = vacation_days_for_used_table(conn, self._employee_id, r)
             html += f"""
                     <tr>
