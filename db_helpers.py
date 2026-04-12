@@ -1,7 +1,7 @@
 """Query helpers: employee list, details, balances, vacation and earned days."""
 import sqlite3
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Optional, List, Dict
 
 
 def _row_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -78,28 +78,67 @@ def update_employee_contract(
     contract_end_date: Optional[str],
     religion: Optional[str] = None,
     working_days_per_week: Optional[int] = None,
+    start_contract_date: Optional[str] = None,
 ) -> None:
-    if religion and working_days_per_week:
-        conn.execute(
-            "UPDATE employees SET contract_type = ?, contract_end_date = ?, religion = ?, working_days_per_week = ?, updated_at = datetime('now') WHERE id = ?",
-            (contract_type, contract_end_date or None, religion, working_days_per_week, employee_id),
-        )
+    # Use the original logic pattern but extend for start_contract_date
+    base_fields = "contract_type = ?, contract_end_date = ?, updated_at = datetime('now')"
+    base_params = [contract_type, contract_end_date or None]
+    
+    # Build query based on which optional parameters are provided (using original truthiness logic)
+    if religion and working_days_per_week and start_contract_date:
+        query = f"UPDATE employees SET {base_fields}, religion = ?, working_days_per_week = ?, start_contract_date = ? WHERE id = ?"
+        params = base_params + [religion, working_days_per_week, start_contract_date, employee_id]
+    elif religion and working_days_per_week:
+        query = f"UPDATE employees SET {base_fields}, religion = ?, working_days_per_week = ? WHERE id = ?"
+        params = base_params + [religion, working_days_per_week, employee_id]
+    elif religion and start_contract_date:
+        query = f"UPDATE employees SET {base_fields}, religion = ?, start_contract_date = ? WHERE id = ?"
+        params = base_params + [religion, start_contract_date, employee_id]
+    elif working_days_per_week and start_contract_date:
+        query = f"UPDATE employees SET {base_fields}, working_days_per_week = ?, start_contract_date = ? WHERE id = ?"
+        params = base_params + [working_days_per_week, start_contract_date, employee_id]
     elif religion:
-        conn.execute(
-            "UPDATE employees SET contract_type = ?, contract_end_date = ?, religion = ?, updated_at = datetime('now') WHERE id = ?",
-            (contract_type, contract_end_date or None, religion, employee_id),
-        )
+        query = f"UPDATE employees SET {base_fields}, religion = ? WHERE id = ?"
+        params = base_params + [religion, employee_id]
     elif working_days_per_week:
-        conn.execute(
-            "UPDATE employees SET contract_type = ?, contract_end_date = ?, working_days_per_week = ?, updated_at = datetime('now') WHERE id = ?",
-            (contract_type, contract_end_date or None, working_days_per_week, employee_id),
-        )
+        query = f"UPDATE employees SET {base_fields}, working_days_per_week = ? WHERE id = ?"
+        params = base_params + [working_days_per_week, employee_id]
+    elif start_contract_date:
+        query = f"UPDATE employees SET {base_fields}, start_contract_date = ? WHERE id = ?"
+        params = base_params + [start_contract_date, employee_id]
     else:
-        conn.execute(
-            "UPDATE employees SET contract_type = ?, contract_end_date = ?, updated_at = datetime('now') WHERE id = ?",
-            (contract_type, contract_end_date or None, employee_id),
-        )
+        query = f"UPDATE employees SET {base_fields} WHERE id = ?"
+        params = base_params + [employee_id]
+    
+    conn.execute(query, params)
     conn.commit()
+
+
+def apply_prorated_days_from_contract_update(
+    conn: sqlite3.Connection,
+    employee_id: int,
+    prorated_results: List[Dict[str, any]]
+) -> None:
+    """
+    Apply prorated days calculations from contract update to employee year balances.
+    
+    Args:
+        conn: Database connection
+        employee_id: Employee ID
+        prorated_results: List of prorated calculation results from entitlement module
+    """
+    for result in prorated_results:
+        year = result["year"]
+        additional_days = result["days"]
+        
+        if additional_days > 0:
+            # Get current balance for the year
+            current_balance = get_year_balance(conn, employee_id, year)
+            current_days_at_start = current_balance.get("days_at_start", 0)
+            
+            # Add the prorated days to the current balance
+            new_days_at_start = current_days_at_start + additional_days
+            set_days_at_start(conn, employee_id, year, new_days_at_start)
 
 
 def set_employee_active(conn: sqlite3.Connection, employee_id: int, is_active: bool) -> None:

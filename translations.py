@@ -175,6 +175,21 @@ TRANSLATIONS = {
         
         # Days left format
         "days_left_format": "{left} left",
+        
+        # Contract prorated days calculations
+        "prorated_days_calculation": "Prorated days calculation:",
+        "working_days_5_to_6": "⚠️ Working days: 5→6 days/week",
+        "working_days_6_to_5": "⚠️ Working days: 6→5 days/week",
+        "days_recalculated_20_to_24": "Days at start will be recalculated (20→24 day basis).",
+        "days_recalculated_24_to_20": "Days at start will be recalculated (24→20 day basis).",
+        "fields_disabled_conflicts": "🔒 Other contract fields are disabled to prevent conflicts.",
+        "revert_working_days_to_change": "To make other changes, first revert working days to original value.",
+        "converting_to_fixed_term": "Converting to fixed-term: No additional days (keeping existing entitlement).",
+        "converting_to_permanent_no_days": "Converting to permanent: No additional days for this period.",
+        "permanent_contract_full_entitlement": "Permanent contract: Full annual entitlement applies.",
+        "no_additional_prorated_days": "No additional prorated days calculated.",
+        "calculation_error": "Calculation error: {error}",
+        "days_period_format": "• {year}: {days} days ({start} to {end})",
     },
     "sr": {
         # Main window
@@ -311,10 +326,10 @@ TRANSLATIONS = {
         "row_date_serbian_required": "Ред {row}: потребни су датум и српски назив.",
         "row_invalid_date_yyyy_mm_dd": "Ред {row}: неважећи формат датума. Користите ГГГГ-ММ-ДД.",
         "confirm_save_non_working_title": "Потврда чувања",
-        "confirm_save_non_working": "Сачувати {count} нерадних дана за {year}?\n\nБаза података ће бити ажурирана и сви записи годишњих одмора поново израчунати.",
-        "saved_non_working_recalculated": "Успешно је сачувано {count} нерадних дана за {year}.\n\nСви записи годишњих одмора су поново израчунати.",
+        "confirm_save_non_working": "Сачувати {count} нерадних дана за {year}?\n\nБаза података ће бити ажурирана и сви записи годишњих одмора поново прорачунати.",
+        "saved_non_working_recalculated": "Успешно је сачувано {count} нерадних дана за {year}.\n\nСви записи годишњих одмора су поново прорачунати.",
         "failed_to_save_holidays_msg": "Чување празника није успело: {error}",
-        "recalculating_vacation": "Поновно израчунавање записа годишњих одмора...",
+        "recalculating_vacation": "Поновно прорачунавање записа годишњих одмора...",
         "choose_database_location": "Изаберите локацију базе података",
         "choose_folder": "Изаберите фолдер где ће vacation.db фајл бити креиран:",
         "browse": "Потражи",
@@ -350,6 +365,21 @@ TRANSLATIONS = {
         
         # Days left format
         "days_left_format": "{left} преостало",
+        
+        # Contract prorated days calculations
+        "prorated_days_calculation": "Прорачун сразмерних дана:",
+        "working_days_5_to_6": "⚠️ Радни дани: 5→6 дана недељно",
+        "working_days_6_to_5": "⚠️ Радни дани: 6→5 дана недељно",
+        "days_recalculated_20_to_24": "Дани на почетку ће бити прерачунати (основа 20→24 дана).",
+        "days_recalculated_24_to_20": "Дани на почетку ће бити прерачунати (основа 24→20 дана).",
+        "fields_disabled_conflicts": "🔒 Остала поља уговора су онемогућена због спречавања конфликата.",
+        "revert_working_days_to_change": "За друге измене, прво вратите радне дане на оригиналну вредност.",
+        "converting_to_fixed_term": "Прелазак на одређено: Нема додатних дана (задржава се постојеће право).",
+        "converting_to_permanent_no_days": "Прелазак на стално: Нема додатних дана за овај период.",
+        "permanent_contract_full_entitlement": "Стални уговор: Важи пуно годишње право.",
+        "no_additional_prorated_days": "Нема додатних сразмерних дана за прорачун.",
+        "calculation_error": "Грешка у прорачуну: {error}",
+        "days_period_format": "• {year}: {days} дана ({start} до {end})",
     }
 }
 

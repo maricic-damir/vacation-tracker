@@ -315,6 +315,7 @@ class ContractDialog(QDialog):
         parent=None,
         current_type: str = "fixed_term",
         current_end_date: Optional[str] = None,
+        current_start_date: Optional[str] = None,
         current_days_at_start: int = 0,
         current_religion: str = "orthodox",
         current_working_days_per_week: int = 6,
@@ -334,6 +335,7 @@ class ContractDialog(QDialog):
             self.working_days_per_week.addItems(["6 дана недељно", "5 дана недељно (пон-пет)"])
         working_days_idx = 0 if current_working_days_per_week == 6 else 1
         self.working_days_per_week.setCurrentIndex(working_days_idx)
+        self.working_days_per_week.currentIndexChanged.connect(self._on_working_days_changed)
         lay.addRow(tr("working_days_per_week") + ":", self.working_days_per_week)
         self.contract_type = QComboBox()
         if tr("language") == "Language":  # English
@@ -344,6 +346,20 @@ class ContractDialog(QDialog):
         self.contract_type.setCurrentIndex(idx)
         self.contract_type.currentIndexChanged.connect(self._on_type_changed)
         lay.addRow(tr("contract_type") + ":", self.contract_type)
+        
+        # Contract start date
+        self.contract_start_date = QDateEdit()
+        self.contract_start_date.setCalendarPopup(True)
+        if current_start_date:
+            qd = QDate.fromString(current_start_date, "yyyy-MM-dd")
+            if qd.isValid():
+                self.contract_start_date.setDate(qd)
+            else:
+                self.contract_start_date.setDate(QDate.currentDate())
+        else:
+            self.contract_start_date.setDate(QDate.currentDate())
+        self.contract_start_date.dateChanged.connect(self._on_date_changed)
+        lay.addRow(tr("start_contract_date") + ":", self.contract_start_date)
         self.contract_end_date = QDateEdit()
         self.contract_end_date.setCalendarPopup(True)
         if current_end_date:
@@ -354,6 +370,7 @@ class ContractDialog(QDialog):
                 self.contract_end_date.setDate(QDate.currentDate().addYears(1))
         else:
             self.contract_end_date.setDate(QDate.currentDate().addYears(1))
+        self.contract_end_date.dateChanged.connect(self._on_date_changed)
         lay.addRow(tr("contract_end_date") + ":", self.contract_end_date)
         self.days_at_start = QSpinBox()
         self.days_at_start.setMinimum(0)
@@ -363,7 +380,19 @@ class ContractDialog(QDialog):
             lay.addRow("Days at start (this year):", self.days_at_start)
         else:  # Serbian
             lay.addRow("Дани на почетку (ова година):", self.days_at_start)
+        
+        # Prorated calculation display
+        self.prorated_info = QLabel()
+        self.prorated_info.setWordWrap(True)
+        self.prorated_info.setStyleSheet("QLabel { color: #666; font-style: italic; }")
+        lay.addRow("", self.prorated_info)
+        
+        self._current_old_end_date = current_end_date
+        self._current_old_type = current_type
+        self._current_old_working_days = current_working_days_per_week
         self._on_type_changed(idx)
+        self._check_and_handle_field_conflicts()  # Set initial field states
+        self._update_prorated_info()
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -371,20 +400,156 @@ class ContractDialog(QDialog):
 
     def _on_type_changed(self, idx: int):
         is_fixed = idx == 0
+        self.contract_start_date.setEnabled(is_fixed)
         self.contract_end_date.setEnabled(is_fixed)
         self.days_at_start.setEnabled(is_fixed)
+        self._check_and_handle_field_conflicts()
+        self._update_prorated_info()
+    
+    def _on_date_changed(self):
+        self._check_and_handle_field_conflicts()
+        self._update_prorated_info()
+    
+    def _on_working_days_changed(self):
+        self._check_and_handle_field_conflicts()
+        self._update_prorated_info()
+    
+    def _check_and_handle_field_conflicts(self):
+        """Check for conflicting changes and disable/enable fields accordingly."""
+        # Check if working days changed
+        current_working_days = 6 if self.working_days_per_week.currentIndex() == 0 else 5
+        working_days_changed = current_working_days != self._current_old_working_days
+        
+        if working_days_changed:
+            # Working days changed - disable other contract modifications
+            self.contract_type.setEnabled(False)
+            self.contract_start_date.setEnabled(False) 
+            self.contract_end_date.setEnabled(False)
+            self.days_at_start.setEnabled(False)
+            self.religion.setEnabled(False)
+        else:
+            # Working days not changed - enable fields based on contract type
+            self.contract_type.setEnabled(True)
+            self.religion.setEnabled(True)
+            
+            # Enable contract-specific fields based on type
+            is_fixed = self.contract_type.currentIndex() == 0
+            self.contract_start_date.setEnabled(is_fixed)
+            self.contract_end_date.setEnabled(is_fixed)
+            self.days_at_start.setEnabled(is_fixed)
+    
+    def _update_prorated_info(self):
+        """Update the prorated calculation information display."""
+        # Always try to calculate prorated days for any contract transition
+        # (not just fixed-term contracts)
+            
+        try:
+            from entitlement import calculate_prorated_days_for_contract_update
+            
+            old_end_date = self._current_old_end_date
+            new_contract_type = "fixed_term" if self.contract_type.currentIndex() == 0 else "open_ended"
+            
+            # For open-ended contracts, new_end_date should be None
+            if new_contract_type == "open_ended":
+                new_end_date = None
+            else:
+                new_end_date = self.contract_end_date.date().toString("yyyy-MM-dd")
+            
+            working_days_idx = self.working_days_per_week.currentIndex()
+            working_days = 6 if working_days_idx == 0 else 5
+            
+            # Determine contract types
+            old_contract_type = self._current_old_type
+            
+            # Calculate prorated days
+            prorated_results = calculate_prorated_days_for_contract_update(
+                old_end_date,
+                new_end_date,
+                working_days,
+                None,  # calculation_start_date
+                old_contract_type,
+                new_contract_type
+            )
+            
+            # Check if working days changed
+            old_working_days = self._current_old_working_days
+            new_working_days = working_days
+            working_days_changed = old_working_days != new_working_days
+            
+            info_text = ""
+            
+            # If working days changed, prioritize that message and explain field disabling
+            if working_days_changed:
+                if old_working_days == 5 and new_working_days == 6:
+                    info_text += tr("working_days_5_to_6") + "\n"
+                    info_text += tr("days_recalculated_20_to_24") + "\n\n"
+                elif old_working_days == 6 and new_working_days == 5:
+                    info_text += tr("working_days_6_to_5") + "\n"
+                    info_text += tr("days_recalculated_24_to_20") + "\n\n"
+                
+                info_text += tr("fields_disabled_conflicts") + "\n"
+                info_text += tr("revert_working_days_to_change")
+            else:
+                # Normal prorated calculation display when working days haven't changed
+                if prorated_results:
+                    info_text += tr("prorated_days_calculation") + "\n"
+                    for result in prorated_results:
+                        info_text += tr("days_period_format", 
+                                      year=result['year'], 
+                                      days=result['days'], 
+                                      start=result['period_start'], 
+                                      end=result['period_end']) + "\n"
+                else:
+                    # Provide more specific messaging based on contract transition
+                    if old_contract_type == "open_ended" and new_contract_type == "fixed_term":
+                        info_text += tr("converting_to_fixed_term") + "\n"
+                    elif new_contract_type == "open_ended" and old_end_date:
+                        info_text += tr("converting_to_permanent_no_days") + "\n"
+                    elif new_contract_type == "open_ended":
+                        info_text += tr("permanent_contract_full_entitlement") + "\n"
+                    else:
+                        info_text += tr("no_additional_prorated_days") + "\n"
+            
+            self.prorated_info.setText(info_text.strip())
+                
+        except Exception as e:
+            self.prorated_info.setText(tr("calculation_error", error=str(e)))
 
     def get_data(self) -> dict:
         idx = self.contract_type.currentIndex()
         rel_idx = self.religion.currentIndex()
         working_days_idx = self.working_days_per_week.currentIndex()
-        return {
+        
+        # Ensure we always return the correct database values regardless of UI language
+        data = {
             "religion": "orthodox" if rel_idx == 0 else "catholic",
             "working_days_per_week": 6 if working_days_idx == 0 else 5,
             "contract_type": "fixed_term" if idx == 0 else "open_ended",
             "contract_end_date": self.contract_end_date.date().toString("yyyy-MM-dd") if idx == 0 else None,
+            "contract_start_date": self.contract_start_date.date().toString("yyyy-MM-dd") if idx == 0 else None,
             "days_at_start": self.days_at_start.value() if idx == 0 else 0,
         }
+        
+        # Include prorated calculation results for all contract transitions
+        try:
+            from entitlement import calculate_prorated_days_for_contract_update
+            new_contract_type = "fixed_term" if idx == 0 else "open_ended"
+            data["prorated_results"] = calculate_prorated_days_for_contract_update(
+                self._current_old_end_date,
+                data["contract_end_date"],
+                data["working_days_per_week"],
+                None,  # calculation_start_date
+                self._current_old_type,
+                new_contract_type
+            )
+        except Exception:
+            data["prorated_results"] = []
+        
+        # Check if working days per week changed and add recalculation info
+        data["old_working_days_per_week"] = self._current_old_working_days
+        data["working_days_changed"] = (self._current_old_working_days != data["working_days_per_week"])
+            
+        return data
 
 
 # ---------- Set transferred days (from previous year) ----------

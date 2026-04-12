@@ -403,7 +403,7 @@ class EmployeeDetailScreen(QWidget):
         conn = self._conn()
         if not conn:
             return
-        from db_helpers import get_employee, get_year_balance, update_employee_contract, set_days_at_start
+        from db_helpers import get_employee, get_year_balance, update_employee_contract, set_days_at_start, apply_prorated_days_from_contract_update
         emp = get_employee(conn, self._employee_id)
         if not emp:
             return
@@ -413,6 +413,7 @@ class EmployeeDetailScreen(QWidget):
             self,
             current_type=emp.get("contract_type", "fixed_term"),
             current_end_date=emp.get("contract_end_date") or None,
+            current_start_date=emp.get("start_contract_date") or None,
             current_days_at_start=balance.get("days_at_start", 0),
             current_religion=emp.get("religion", "orthodox"),
             current_working_days_per_week=emp.get("working_days_per_week", 6),
@@ -421,9 +422,40 @@ class EmployeeDetailScreen(QWidget):
             return
         data = dlg.get_data()
         try:
-            update_employee_contract(conn, self._employee_id, data["contract_type"], data["contract_end_date"], data["religion"], data["working_days_per_week"])
-            if data["contract_type"] == "fixed_term":
+            # Update the employee contract with all fields including start_contract_date
+            update_employee_contract(
+                conn, 
+                self._employee_id, 
+                data["contract_type"], 
+                data["contract_end_date"], 
+                data["religion"], 
+                data["working_days_per_week"],
+                data["contract_start_date"]
+            )
+            
+            # Apply prorated days from contract date changes (for any contract type transition)
+            prorated_results = data.get("prorated_results", [])
+            if prorated_results:
+                apply_prorated_days_from_contract_update(conn, self._employee_id, prorated_results)
+            elif data["contract_type"] == "fixed_term":
+                # Fallback to manual days setting only for fixed-term contracts
                 set_days_at_start(conn, self._employee_id, year, data.get("days_at_start", 0))
+            
+            # Handle working days per week changes
+            if data.get("working_days_changed", False):
+                from entitlement import recalculate_days_at_start_for_working_days_change
+                
+                new_days_at_start = recalculate_days_at_start_for_working_days_change(
+                    emp.get("start_contract_date"),
+                    data["contract_end_date"],
+                    data["contract_type"],
+                    data["old_working_days_per_week"],
+                    data["working_days_per_week"],
+                    year
+                )
+                
+                if new_days_at_start is not None:
+                    set_days_at_start(conn, self._employee_id, year, new_days_at_start)
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
             return
