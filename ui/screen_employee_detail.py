@@ -902,6 +902,45 @@ class EmployeeDetailScreen(QWidget):
         html += """
                 </tbody>
             </table>
+        """
+        
+        # Add used paid leave (special leave) section
+        from database import get_special_leave_usage_for_employee
+        special_leave_usage = get_special_leave_usage_for_employee(conn, self._employee_id, year)
+        
+        if special_leave_usage:
+            html += f"""
+            <h2>{tr('special_leaves_section')}</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>{tr('usage_date')}</th>
+                        <th>{tr('special_leave_type')}</th>
+                        <th class="right-align">{tr('used_days_column')}</th>
+                        <th>{tr('reason_notes')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
+            
+            for usage in special_leave_usage:
+                # Use the appropriate language name for the leave type
+                type_name = usage.get('type_name_sr', '') if tr('language') != 'Language' else usage.get('type_name_en', '')
+                html += f"""
+                        <tr>
+                            <td>{usage.get('usage_date', '')}</td>
+                            <td>{type_name}</td>
+                            <td class="right-align">{usage.get('days_used', '')}</td>
+                            <td>{usage.get('reason_notes', '') or '-'}</td>
+                        </tr>
+                """
+            
+            html += """
+                    </tbody>
+                </table>
+            """
+        
+        html += """
         </body>
         </html>
         """
