@@ -116,6 +116,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     migrate_add_religion(conn)
     migrate_add_start_contract_date(conn)
     migrate_add_special_leave_tables(conn)
+    migrate_add_family_feast_nameday_leave_type(conn)
     migrate_add_working_days_per_week(conn)
     conn.commit()
 
@@ -511,6 +512,7 @@ def migrate_add_special_leave_tables(conn: sqlite3.Connection) -> None:
         {"name_en": "Moving", "name_sr": "Селидба", "days_entitled": 2},
         {"name_en": "Death of a member of a wider family", "name_sr": "Смрт члана шире породице", "days_entitled": 1},
         {"name_en": "Deaths of a member of the immediate family and members of the household", "name_sr": "Смрт члана уже породице и домаћинства", "days_entitled": 3},
+        {"name_en": "Family feast / Nameday", "name_sr": "Крсна слава / Имендан", "days_entitled": 1},
     ]
     
     for leave_type in default_types:
@@ -520,6 +522,24 @@ def migrate_add_special_leave_tables(conn: sqlite3.Connection) -> None:
         """, (leave_type["name_en"], leave_type["name_sr"], leave_type["days_entitled"]))
     
     conn.commit()
+
+
+def migrate_add_family_feast_nameday_leave_type(conn: sqlite3.Connection) -> None:
+    """Add Family feast / Nameday leave type if it doesn't exist."""
+    # Check if the leave type already exists
+    cur = conn.execute("""
+        SELECT COUNT(*) FROM special_leave_types 
+        WHERE name_en = 'Family feast / Nameday' OR name_sr = 'Крсна слава / Имендан'
+    """)
+    count = cur.fetchone()[0]
+    
+    if count == 0:
+        # Add the new leave type
+        conn.execute("""
+            INSERT INTO special_leave_types (name_en, name_sr, days_entitled, is_active)
+            VALUES (?, ?, ?, 1)
+        """, ("Family feast / Nameday", "Крсна слава / Имендан", 1))
+        conn.commit()
 
 
 def migrate_add_working_days_per_week(conn: sqlite3.Connection) -> None:
