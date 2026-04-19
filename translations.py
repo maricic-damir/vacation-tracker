@@ -192,6 +192,10 @@ TRANSLATIONS = {
         # Days left format
         "days_left_format": "{left} left",
         
+        # Print-only additions
+        "six_days_vacation_note": "For employees working 6 days per week, the number of vacation days per year is 24.",
+        "old_vacation_usage_note": "Last year (old) vacation must be used until the end of current year.",
+        
         # Contract prorated days calculations
         "prorated_days_calculation": "Prorated days calculation:",
         "working_days_5_to_6": "⚠️ Working days: 5→6 days/week",
@@ -397,6 +401,10 @@ TRANSLATIONS = {
         
         # Days left format
         "days_left_format": "{left} преостало",
+        
+        # Print-only additions
+        "six_days_vacation_note": "За запослене који раде 6 дана недељно, број дана годишњег одмора је 24, за 12 месеци рада.",
+        "old_vacation_usage_note": "Прошлогодишњи (стари) годишњи одмор мора се искористити до краја текуће године.",
         
         # Contract prorated days calculations
         "prorated_days_calculation": "Прорачун сразмерних дана:",

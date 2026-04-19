@@ -874,55 +874,59 @@ class EmployeeDetailScreen(QWidget):
         html += """
                 </tbody>
             </table>
-            
-            <h2>{}</h2>
+        """
+        
+        # Add earned days section only if there are earned days
+        earned = list_earned_days(conn, self._employee_id)
+        if earned:
+            html += f"""
+            <h2>{tr('earned_days')}</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>{}</th>
-                        <th class="right-align">{}</th>
-                        <th>{}</th>
-                        <th>{}</th>
+                        <th>{tr('date_earned')}</th>
+                        <th class="right-align">{tr('days')}</th>
+                        <th>{tr('reason_notes')}</th>
+                        <th>{tr('created')}</th>
                     </tr>
                 </thead>
                 <tbody>
-        """.format(tr('earned_days'), tr('date_earned'), tr('days'), tr('reason_notes'), tr('created'))
-        
-        earned = list_earned_days(conn, self._employee_id)
-        for r in earned:
-            html += f"""
-                    <tr>
-                        <td>{r.get('earned_date', '')}</td>
-                        <td class="right-align">{r.get('number_of_days', '')}</td>
-                        <td>{r.get('reason_notes', '')}</td>
-                        <td>{str(r.get('created_at', ''))[:10]}</td>
-                    </tr>
+            """
+            
+            for r in earned:
+                html += f"""
+                        <tr>
+                            <td>{r.get('earned_date', '')}</td>
+                            <td class="right-align">{r.get('number_of_days', '')}</td>
+                            <td>{r.get('reason_notes', '')}</td>
+                            <td>{str(r.get('created_at', ''))[:10]}</td>
+                        </tr>
+                """
+            
+            html += """
+                    </tbody>
+                </table>
             """
         
-        html += """
-                </tbody>
-            </table>
-        """
-        
-        # Add used paid leave (special leave) section
+        # Add used paid leave (special leave) section - always show in print version
         from database import get_special_leave_usage_for_employee
         special_leave_usage = get_special_leave_usage_for_employee(conn, self._employee_id, year)
         
+        html += f"""
+        <h2>{tr('special_leaves_section')}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>{tr('usage_date')}</th>
+                    <th>{tr('special_leave_type')}</th>
+                    <th class="right-align">{tr('used_days_column')}</th>
+                    <th>{tr('reason_notes')}</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
         if special_leave_usage:
-            html += f"""
-            <h2>{tr('special_leaves_section')}</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>{tr('usage_date')}</th>
-                        <th>{tr('special_leave_type')}</th>
-                        <th class="right-align">{tr('used_days_column')}</th>
-                        <th>{tr('reason_notes')}</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
-            
             for usage in special_leave_usage:
                 # Use the appropriate language name for the leave type
                 type_name = usage.get('type_name_sr', '') if tr('language') != 'Language' else usage.get('type_name_en', '')
@@ -934,11 +938,27 @@ class EmployeeDetailScreen(QWidget):
                             <td>{usage.get('reason_notes', '') or '-'}</td>
                         </tr>
                 """
-            
-            html += """
-                    </tbody>
-                </table>
+        else:
+            # Show empty row when no special leave usage
+            no_data_text = tr('no_data') if tr('no_data') != 'no_data' else ('No data' if tr('language') == 'Language' else 'Нема података')
+            html += f"""
+                    <tr>
+                        <td colspan="4" style="text-align: center; font-style: italic; color: #666;">{no_data_text}</td>
+                    </tr>
             """
+        
+        html += """
+                </tbody>
+            </table>
+        """
+        
+        # Add the two additional notes at the end of the print page
+        html += f"""
+            <div style="margin-top: 30px; padding: 15px; background-color: #f9f9f9; border-left: 3px solid #ccc;">
+                <p style="margin: 0 0 10px 0; font-size: 9pt;"><strong>•</strong> {tr('six_days_vacation_note')}</p>
+                <p style="margin: 0; font-size: 9pt;"><strong>•</strong> {tr('old_vacation_usage_note')}</p>
+            </div>
+        """
         
         html += """
         </body>
