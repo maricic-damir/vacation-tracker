@@ -132,15 +132,26 @@ class EmployeeDetailScreen(QWidget):
         header.addWidget(self._btn_back, 0)
         lay.addLayout(header)
 
+        # Titles for Details and Year sections
+        titles_row = QHBoxLayout()
+        self._details_title = QLabel()
+        self._details_title.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        titles_row.addWidget(self._details_title, 1)
+        
+        self._year_title = QLabel()
+        self._year_title.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        titles_row.addWidget(self._year_title, 1)
+        lay.addLayout(titles_row)
+        
         # Details (left) + current-year balance (right) — same visual height (shared row height).
         details_row = QHBoxLayout()
-        self._props_group = QGroupBox("Details")
+        self._props_group = QGroupBox()
         self._props_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._props_layout = QFormLayout(self._props_group)
         _configure_form_columns(self._props_layout)
         details_row.addWidget(self._props_group, 1)
 
-        self._balance_group = QGroupBox("")
+        self._balance_group = QGroupBox()
         self._balance_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._balance_form = QFormLayout(self._balance_group)
         _configure_balance_form(self._balance_form)
@@ -165,23 +176,38 @@ class EmployeeDetailScreen(QWidget):
         self._balance_form.addRow(self._bal_lbl_left, self._bal_left)
         details_row.addWidget(self._balance_group, 1)
         lay.addLayout(details_row)
+        lay.addSpacing(15)
 
         # Used days off table
+        self._used_title = QLabel()
+        self._used_title.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        lay.addWidget(self._used_title)
+        
         self._used_group = QGroupBox()
         self._used_table = QTableWidget()
         self._used_table.setColumnCount(5)  # Added column for cancel button
+        self._used_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._used_table.horizontalHeader().setStretchLastSection(True)
         used_layout = QVBoxLayout(self._used_group)
+        used_layout.setContentsMargins(8, 0, 8, 8)  # Zero top margin for tightest spacing
         used_layout.addWidget(self._used_table)
         lay.addWidget(self._used_group)
+        lay.addSpacing(15)
 
         # Earned days table
+        self._earned_title = QLabel()
+        self._earned_title.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        lay.addWidget(self._earned_title)
+        
         self._earned_group = QGroupBox()
         self._earned_table = QTableWidget()
         self._earned_table.setColumnCount(4)
         self._earned_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         earned_layout = QVBoxLayout(self._earned_group)
+        earned_layout.setContentsMargins(8, 0, 8, 8)  # Zero top margin for tightest spacing
         earned_layout.addWidget(self._earned_table)
         lay.addWidget(self._earned_group)
+        lay.addSpacing(15)
 
         # First row buttons: Schedule vacation and Special leave entitlements
         first_row_lay = QHBoxLayout()
@@ -231,9 +257,9 @@ class EmployeeDetailScreen(QWidget):
     def _update_ui_text(self):
         """Update all UI text with translations."""
         self._btn_back.setText(tr("back_to_list"))
-        self._props_group.setTitle(tr("details"))
-        self._used_group.setTitle(tr("used_days_off"))
-        self._earned_group.setTitle(tr("earned_days"))
+        self._details_title.setText(tr("details"))
+        self._used_title.setText(tr("used_days_off"))
+        self._earned_title.setText(tr("earned_days"))
         self._btn_contract.setText(tr("contract_date_type"))
         self._btn_transferred.setText(tr("set_transferred_days"))
         self._btn_schedule.setText(tr("schedule_vacation"))
@@ -326,7 +352,7 @@ class EmployeeDetailScreen(QWidget):
         )
 
         # Balance (right column; title shows year)
-        self._balance_group.setTitle(f"{tr('year')} {year}")
+        self._year_title.setText(f"{tr('year')} {year}")
         self._bal_days_start.setText(f"{balance['days_at_start']} ({balance['at_start_left']} {tr('left')})")
         self._bal_transferred_num.setText(f"{balance['days_transferred']} ({balance['transferred_left']} {tr('left')})")
         # Show note if transferred days have expired (after December 31 of their year)
@@ -370,6 +396,8 @@ class EmployeeDetailScreen(QWidget):
                 # Empty cell for completed or started vacations
                 self._used_table.setItem(i, 4, _table_item("", Qt.AlignmentFlag.AlignCenter))
         
+        # Resize columns to fit content, then stretch to fill available width
+        self._used_table.resizeColumnsToContents()
         self._used_table.resizeRowsToContents()
 
         # Earned days
