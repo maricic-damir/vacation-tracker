@@ -217,6 +217,16 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     return conn
 
 
+def is_shared_database_path(db_path: str) -> bool:
+    """Check if database path suggests it's in a shared/cloud storage location."""
+    path_lower = db_path.lower()
+    shared_indicators = [
+        'onedrive', 'dropbox', 'google drive', 'icloud', 'box', 'sync',
+        'shared', 'network', 'server', 'nas', 'smb', 'nfs'
+    ]
+    return any(indicator in path_lower for indicator in shared_indicators)
+
+
 # ---------------------------------------------------------------------------
 # DB path: first run vs find
 # ---------------------------------------------------------------------------

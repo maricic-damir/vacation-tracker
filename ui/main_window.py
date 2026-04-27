@@ -137,7 +137,16 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentWidget(self._all_schedules_screen)
 
     def ensure_db(self) -> bool:
-        """Resolve DB path (find or create). Open connection and run completion job. Return True if ready."""
+        """
+        Resolve DB path (find or create). Open connection and run completion job. Return True if ready.
+        
+        Startup behavior on new computers:
+        1. Fresh install (no config): User chooses between creating new DB or locating existing one
+        2. Previous install (config exists, DB missing): Prompts to find existing DB (safer for shared DBs) or create new
+        3. Valid DB found: Connects directly
+        
+        This approach prevents accidental overwriting of shared databases in cloud storage locations.
+        """
         def choose():
             return choose_or_create_db_path(self)
 

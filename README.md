@@ -51,9 +51,15 @@ After first run, configure your employees' working schedules:
 python main.py
 ```
 
-**First run:** You will be asked where to store the database (e.g. a folder that syncs with OneDrive). The file is created as `vacation.db` (or the name you choose).
+**First run:** You'll be asked whether to create a new database or use an existing one:
+- **Create New Database**: Choose where to store a new database file (e.g. OneDrive folder)  
+- **Use Existing Database**: Browse and select an existing `vacation.db` file (recommended for shared setups)
 
-**Later runs:** If the app was run before on this machine but the database file is missing (e.g. moved or not yet synced), you will be asked to **locate** the existing `vacation.db` file.
+**Later runs:** If the previously used database file is missing (e.g. moved or not yet synced), you'll be prompted to:
+- **Find Existing Database** (recommended): Browse to locate the moved database file
+- **Create New Database Here**: Create a fresh database at the previous location
+
+**💡 Tip for Shared Databases:** Always choose "Use Existing Database" or "Find Existing Database" to avoid accidentally creating duplicate databases when the shared file is temporarily unavailable (OneDrive not synced, network drive disconnected, etc.)
 
 ## Build single EXE (Windows)
 

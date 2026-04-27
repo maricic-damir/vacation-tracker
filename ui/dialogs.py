@@ -33,19 +33,39 @@ from database import get_special_leave_types, get_special_leave_balance_for_empl
 
 
 def choose_or_create_db_path(parent: Optional[QWidget]) -> Optional[str]:
-    """Let user choose where to create or select the database file (first run)."""
-    path, _ = QFileDialog.getSaveFileName(
-        parent,
-        "Choose where to store the database",
-        "",
-        "SQLite database (*.db);;All files (*)",
-        "SQLite database (*.db)",
-    )
-    if not path:
+    """Let user choose to create new database or locate existing one (first run)."""
+    # First ask user what they want to do
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle("Database Setup")
+    box.setText("Welcome to Vacation Tracker!\n\nWhat would you like to do?")
+    
+    create_btn = box.addButton("Create New Database", QMessageBox.ButtonRole.AcceptRole)
+    locate_btn = box.addButton("Use Existing Database", QMessageBox.ButtonRole.ActionRole)
+    box.addButton(QMessageBox.StandardButton.Cancel)
+    
+    box.exec()
+    clicked = box.clickedButton()
+    
+    if clicked == create_btn:
+        # Create new database
+        path, _ = QFileDialog.getSaveFileName(
+            parent,
+            "Choose where to store the new database",
+            "",
+            "SQLite database (*.db);;All files (*)",
+            "SQLite database (*.db)",
+        )
+        if not path:
+            return None
+        if not path.lower().endswith(".db"):
+            path = path + ".db" if not path.endswith(".") else path + "db"
+        return path
+    elif clicked == locate_btn:
+        # Locate existing database
+        return locate_db_path(parent)
+    else:
         return None
-    if not path.lower().endswith(".db"):
-        path = path + ".db" if not path.endswith(".") else path + "db"
-    return path
 
 
 def locate_db_path(parent: Optional[QWidget]) -> Optional[str]:
@@ -63,24 +83,36 @@ def locate_db_path(parent: Optional[QWidget]) -> Optional[str]:
 def resolve_missing_saved_db_path(parent: Optional[QWidget], saved_path: str) -> Optional[str]:
     """Saved path in config but file missing: create empty DB there or locate another file."""
     box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Icon.Question)
-    box.setWindowTitle(tr("database_file_missing_title"))
-    box.setText(tr("database_file_missing_message").format(path=saved_path))
-    create_btn = box.addButton(
-        tr("create_empty_database_here"),
-        QMessageBox.ButtonRole.AcceptRole,
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Database Not Found")
+    box.setText(
+        f"The previously used database file was not found:\n\n{saved_path}\n\n"
+        "This might happen if:\n"
+        "• The database was moved to a different location\n"
+        "• You're using a shared database (OneDrive, network drive, etc.)\n"
+        "• The file was deleted or renamed\n\n"
+        "What would you like to do?"
     )
+    
     locate_btn = box.addButton(
-        tr("locate_existing_database"),
+        "Find Existing Database", 
+        QMessageBox.ButtonRole.AcceptRole
+    )
+    create_btn = box.addButton(
+        "Create New Database Here",
         QMessageBox.ButtonRole.ActionRole,
     )
     box.addButton(QMessageBox.StandardButton.Cancel)
+    
+    # Make "Find Existing" the default since it's safer for shared databases
+    box.setDefaultButton(locate_btn)
+    
     box.exec()
     clicked = box.clickedButton()
-    if clicked == create_btn:
-        return saved_path
     if clicked == locate_btn:
         return locate_db_path(parent)
+    if clicked == create_btn:
+        return saved_path
     return None
 
 
