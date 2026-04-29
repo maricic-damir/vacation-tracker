@@ -288,10 +288,18 @@ class ScheduleVacationDialog(QDialog):
         self.end_date.setDate(QDate.currentDate())
         self.end_date.setCalendarPopup(True)
         lay.addRow(tr("end") + ":", self.end_date)
+        
+        # Connect start date change to update end date
+        self.start_date.dateChanged.connect(self._on_start_date_changed)
+        
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay.addRow(bb)
+
+    def _on_start_date_changed(self, date):
+        """When start date changes, set end date to the same date"""
+        self.end_date.setDate(date)
 
     def get_data(self) -> dict:
         return {
